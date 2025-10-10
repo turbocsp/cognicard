@@ -1,0 +1,89 @@
+import React, { useState } from "react";
+import { supabase } from "@/supabaseClient";
+import { Link } from "react-router-dom";
+import toast from "react-hot-toast";
+
+const SignUpPage = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSignUp = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) {
+      if (error.message.includes("Failed to fetch")) {
+        toast.error(
+          "Erro de rede. Verifique sua conexão ou a configuração de CORS no Supabase."
+        );
+      } else {
+        toast.error(error.message);
+      }
+    } else {
+      toast.success(
+        "Cadastro realizado! Verifique seu e-mail para confirmar a conta."
+      );
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+      <div className="p-8 max-w-md w-full bg-gray-800 rounded-lg shadow-md">
+        <h1 className="text-2xl font-bold text-center mb-6">
+          Criar Conta no CogniCard
+        </h1>
+        <form onSubmit={handleSignUp} className="space-y-6">
+          <div>
+            <label className="block mb-2 text-sm font-medium" htmlFor="email">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full px-3 py-2 border rounded-md bg-gray-700 border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label
+              className="block mb-2 text-sm font-medium"
+              htmlFor="password"
+            >
+              Senha
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full px-3 py-2 border rounded-md bg-gray-700 border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <button
+            type="submit"
+            className="w-full bg-blue-600 hover:bg-blue-700 font-bold py-2 px-4 rounded-md"
+            disabled={loading}
+          >
+            {loading ? "Cadastrando..." : "Cadastrar"}
+          </button>
+        </form>
+        <p className="text-center text-sm text-gray-400 mt-6">
+          Já tem uma conta?{" "}
+          <Link
+            to="/login"
+            className="font-medium text-blue-400 hover:underline"
+          >
+            Faça o login
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+};
+
+export default SignUpPage;
