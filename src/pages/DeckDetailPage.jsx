@@ -5,6 +5,9 @@ import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
 import { CardEditModal } from "@/components/CardEditModal.jsx";
 import { ConfirmationModal } from "@/components/ConfirmationModal.jsx";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { MarkdownGuideModal } from "@/components/MarkdownGuideModal";
 
 function DeckDetailPage() {
   const { deckId } = useParams();
@@ -25,6 +28,7 @@ function DeckDetailPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cardToDelete, setCardToDelete] = useState(null);
   const [cardToEdit, setCardToEdit] = useState(null);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const fetchDeckData = useCallback(async () => {
     if (!deckId) return;
@@ -186,9 +190,16 @@ function DeckDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow sticky top-8">
-              <h2 className="text-xl font-semibold mb-4">
-                Adicionar Novo Cartão
-              </h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Adicionar Novo Cartão</h2>
+                <button
+                  type="button"
+                  onClick={() => setIsGuideOpen(true)}
+                  className="text-sm text-blue-500 dark:text-blue-400 hover:underline font-medium"
+                >
+                  Guia
+                </button>
+              </div>
               <form onSubmit={handleCreateCard} className="space-y-4">
                 <div>
                   <label
@@ -333,12 +344,16 @@ function DeckDetailPage() {
                         </svg>
                       </button>
                     </div>
-                    <p className="font-semibold border-b border-gray-200 dark:border-gray-700 pb-2 mb-2 pr-16">
-                      {card.front_content}
-                    </p>
-                    <p className="text-gray-600 dark:text-gray-300 mb-2">
-                      {card.back_content}
-                    </p>
+                    <div className="prose prose-sm dark:prose-invert max-w-none border-b border-gray-200 dark:border-gray-700 pb-2 mb-2 pr-16">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {card.front_content}
+                      </ReactMarkdown>
+                    </div>
+                    <div className="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300 mb-2">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {card.back_content}
+                      </ReactMarkdown>
+                    </div>
                     {card.tags && card.tags.length > 0 && (
                       <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                         {card.tags.map((tag) => (
@@ -376,6 +391,11 @@ function DeckDetailPage() {
         onClose={() => setCardToEdit(null)}
         onSave={handleSaveEdit}
         card={cardToEdit}
+      />
+
+      <MarkdownGuideModal
+        isOpen={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
       />
     </div>
   );

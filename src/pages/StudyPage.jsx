@@ -3,6 +3,8 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/supabaseClient";
 import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 function StudyPage() {
   const { deckId } = useParams();
@@ -299,8 +301,10 @@ function StudyPage() {
             {deck?.name || "Certo/Errado"}
           </h2>
 
-          <div className="text-center py-6 min-h-[100px] flex items-center justify-center">
-            <p>{currentCard.front_content}</p>
+          <div className="text-center py-6 min-h-[100px] flex items-center justify-center prose dark:prose-invert max-w-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {currentCard.front_content}
+            </ReactMarkdown>
           </div>
 
           {isAnswerVisible && (
@@ -316,8 +320,10 @@ function StudyPage() {
                   ? "Você Acertou!"
                   : "Você Errou!"}
               </p>
-              <div className="mt-2 text-base">
-                <p>{currentCard.back_content}</p>
+              <div className="mt-2 text-base prose dark:prose-invert max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {currentCard.back_content}
+                </ReactMarkdown>
               </div>
               <div className="mt-4 space-y-2">
                 {currentCard.theory_notes && (
@@ -325,8 +331,10 @@ function StudyPage() {
                     <summary className="font-semibold cursor-pointer">
                       Teoria
                     </summary>
-                    <div className="mt-2 text-sm">
-                      <p>{currentCard.theory_notes}</p>
+                    <div className="mt-2 text-sm prose prose-sm dark:prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {currentCard.theory_notes}
+                      </ReactMarkdown>
                     </div>
                   </details>
                 )}

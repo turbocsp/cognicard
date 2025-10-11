@@ -7,6 +7,10 @@ import refreshPlugin from "eslint-plugin-react-refresh";
 
 export default [
   {
+    // Ignora arquivos de configuração do linting
+    ignores: ["*.config.js", "*.config.cjs"],
+  },
+  {
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
     },
@@ -25,6 +29,11 @@ export default [
   },
   {
     ...pluginReactConfig,
+    settings: {
+      react: {
+        version: "detect", // Detecta a versão do React automaticamente
+      },
+    },
     rules: {
       ...pluginReactConfig.rules,
       "react/react-in-jsx-scope": "off", // Not needed with modern React/Vite

@@ -1,33 +1,31 @@
 import { useState, useEffect } from "react";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
-export function CardEditModal({ isOpen, onClose, onSave, card }) {
-  const [frontContent, setFrontContent] = useState("");
-  const [backContent, setBackContent] = useState("");
+export function CardEditModal({ isOpen, onClose, card, onSave }) {
+  const [front, setFront] = useState("");
+  const [back, setBack] = useState("");
   const [theory, setTheory] = useState("");
-  const [sourceReferences, setSourceReferences] = useState("");
+  const [sources, setSources] = useState("");
   const [tags, setTags] = useState("");
+  const [activeTab, setActiveTab] = useState("front"); // front, back, theory
 
   useEffect(() => {
     if (card) {
-      setFrontContent(card.front_content || "");
-      setBackContent(card.back_content || "");
+      setFront(card.front_content || "");
+      setBack(card.back_content || "");
       setTheory(card.theory_notes || "");
-      setSourceReferences((card.source_references || []).join(", "));
-      setTags((card.tags || []).join(", "));
+      setSources(card.source_references?.join(", ") || "");
+      setTags(card.tags?.join(", ") || "");
     }
   }, [card]);
 
-  if (!isOpen || !card) {
-    return null;
-  }
-
   const handleSave = () => {
-    const updatedCard = {
+    onSave({
       ...card,
-      front_content: frontContent,
-      back_content: backContent,
+      front_content: front,
+      back_content: back,
       theory_notes: theory,
-      source_references: sourceReferences
+      source_references: sources
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean),
@@ -35,86 +33,100 @@ export function CardEditModal({ isOpen, onClose, onSave, card }) {
         .split(",")
         .map((t) => t.trim())
         .filter(Boolean),
-    };
-    onSave(updatedCard);
+    });
   };
 
+  if (!isOpen) return null;
+
+  const renderEditor = () => {
+    let value, setter;
+    switch (activeTab) {
+      case "back":
+        value = back;
+        setter = setBack;
+        break;
+      case "theory":
+        value = theory;
+        setter = setTheory;
+        break;
+      default:
+        value = front;
+        setter = setFront;
+    }
+
+    return (
+      <div className="grid grid-cols-2 gap-4 h-64">
+        <textarea
+          value={value}
+          onChange={(e) => setter(e.target.value)}
+          className="w-full h-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+        />
+        <div className="w-full h-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 overflow-y-auto">
+          <MarkdownRenderer content={value} />
+        </div>
+      </div>
+    );
+  };
+
+  const TabButton = ({ tabName, label }) => (
+    <button
+      onClick={() => setActiveTab(tabName)}
+      className={`px-4 py-2 text-sm font-medium rounded-t-lg ${
+        activeTab === tabName
+          ? "bg-blue-600 text-white"
+          : "bg-gray-200 dark:bg-gray-600"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg">
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-3xl">
         <h2 className="text-xl font-bold mb-4">Editar Cartão</h2>
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="front" className="block text-sm font-medium mb-1">
-              Frente (Pergunta)
-            </label>
-            <textarea
-              id="front"
-              value={frontContent}
-              onChange={(e) => setFrontContent(e.target.value)}
-              rows={3}
-              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+
+        <div className="mb-4 border-b border-gray-300 dark:border-gray-600">
+          <div className="flex">
+            <TabButton tabName="front" label="Frente" />
+            <TabButton tabName="back" label="Verso" />
+            <TabButton tabName="theory" label="Teoria" />
           </div>
+        </div>
+
+        {renderEditor()}
+
+        <div className="grid grid-cols-2 gap-4 mt-4">
           <div>
-            <label htmlFor="back" className="block text-sm font-medium mb-1">
-              Verso (Resposta)
-            </label>
-            <textarea
-              id="back"
-              value={backContent}
-              onChange={(e) => setBackContent(e.target.value)}
-              rows={3}
-              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label htmlFor="theory" className="block text-sm font-medium mb-1">
-              Teoria
-            </label>
-            <textarea
-              id="theory"
-              value={theory}
-              onChange={(e) => setTheory(e.target.value)}
-              rows={2}
-              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label htmlFor="sources" className="block text-sm font-medium mb-1">
-              Fontes (separadas por vírgula)
-            </label>
+            <label className="block text-sm font-medium mb-1">Fontes</label>
             <input
               type="text"
-              id="sources"
-              value={sourceReferences}
-              onChange={(e) => setSourceReferences(e.target.value)}
-              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={sources}
+              onChange={(e) => setSources(e.target.value)}
+              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
             />
           </div>
           <div>
-            <label htmlFor="tags" className="block text-sm font-medium mb-1">
-              Tags (separadas por vírgula)
-            </label>
+            <label className="block text-sm font-medium mb-1">Tags</label>
             <input
               type="text"
-              id="tags"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
-              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
             />
           </div>
         </div>
+
         <div className="flex justify-end gap-4 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
+            className="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded-md"
           >
             Cancelar
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-blue-600 text-white rounded-md"
           >
             Salvar
           </button>
