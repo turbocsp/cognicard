@@ -9,6 +9,7 @@ import { ContextMenu } from "@/components/ContextMenu";
 import { MoveDeckModal } from "@/components/MoveDeckModal";
 import { MoveFolderModal } from "@/components/MoveFolderModal";
 import { GlobalSearch } from "@/components/GlobalSearch";
+import { ActivityCalendar } from "@/components/ActivityCalendar";
 
 export function DashboardPage() {
   const { session, theme, toggleTheme } = useAuth();
@@ -31,6 +32,14 @@ export function DashboardPage() {
   const [openFolders, setOpenFolders] = useState(new Set());
   const [touchTimeout, setTouchTimeout] = useState(null);
 
+  // Gamification State
+  const [streakData, setStreakData] = useState({
+    current_streak: 0,
+    longest_streak: 0,
+  });
+  const [activityData, setActivityData] = useState([]);
+  const [currentYear] = useState(new Date().getFullYear());
+
   const fetchInitialData = useCallback(async () => {
     if (!session) return;
     setLoading(true);
@@ -42,11 +51,25 @@ export function DashboardPage() {
       .from("folders")
       .select("*")
       .eq("user_id", session.user.id);
+    const streakPromise = supabase.rpc("get_study_streak", {
+      p_user_id: session.user.id,
+    });
+    const activityPromise = supabase.rpc("get_study_activity", {
+      p_user_id: session.user.id,
+      p_year: currentYear,
+    });
 
     const [
       { data: deckData, error: deckError },
       { data: folderData, error: folderError },
-    ] = await Promise.all([deckPromise, folderPromise]);
+      { data: streakResult, error: streakError },
+      { data: activityResult, error: activityError },
+    ] = await Promise.all([
+      deckPromise,
+      folderPromise,
+      streakPromise,
+      activityPromise,
+    ]);
 
     if (deckError) toast.error(deckError.message);
     else setDecks(deckData || []);
@@ -54,8 +77,17 @@ export function DashboardPage() {
     if (folderError) toast.error(folderError.message);
     else setFolders(folderData || []);
 
+    if (streakError) toast.error(`Streak Error: ${streakError.message}`);
+    else
+      setStreakData(
+        streakResult[0] || { current_streak: 0, longest_streak: 0 }
+      );
+
+    if (activityError) toast.error(`Activity Error: ${activityError.message}`);
+    else setActivityData(activityResult || []);
+
     setLoading(false);
-  }, [session]);
+  }, [session, currentYear]);
 
   useEffect(() => {
     fetchInitialData();
@@ -513,7 +545,30 @@ export function DashboardPage() {
 
         <GlobalSearch />
 
-        <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="my-8 grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Sequência Atual
+            </p>
+            <p className="text-2xl font-bold">
+              🔥 {streakData.current_streak}{" "}
+              {streakData.current_streak === 1 ? "dia" : "dias"}
+            </p>
+          </div>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Maior Sequência
+            </p>
+            <p className="text-2xl font-bold">
+              🏆 {streakData.longest_streak}{" "}
+              {streakData.longest_streak === 1 ? "dia" : "dias"}
+            </p>
+          </div>
+        </div>
+
+        <ActivityCalendar year={currentYear} data={activityData} />
+
+        <main className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
           <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow min-h-[400px]">
             {loading ? (
               <p>Carregando...</p>
