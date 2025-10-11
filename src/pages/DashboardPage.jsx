@@ -39,6 +39,7 @@ export function DashboardPage() {
   });
   const [activityData, setActivityData] = useState([]);
   const [currentYear] = useState(new Date().getFullYear());
+  const [activityView, setActivityView] = useState("week"); // 'week', 'month', 'year'
 
   const fetchInitialData = useCallback(async () => {
     if (!session) return;
@@ -566,7 +567,43 @@ export function DashboardPage() {
           </div>
         </div>
 
-        <ActivityCalendar year={currentYear} data={activityData} />
+        <div className="mb-4 flex justify-center sm:justify-end gap-2">
+          <button
+            onClick={() => setActivityView("week")}
+            className={`px-3 py-1 text-sm rounded-md ${
+              activityView === "week"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-200 dark:bg-gray-700"
+            }`}
+          >
+            Semana
+          </button>
+          <button
+            onClick={() => setActivityView("month")}
+            className={`px-3 py-1 text-sm rounded-md ${
+              activityView === "month"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-200 dark:bg-gray-700"
+            }`}
+          >
+            Mês
+          </button>
+          <button
+            onClick={() => setActivityView("year")}
+            className={`px-3 py-1 text-sm rounded-md ${
+              activityView === "year"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-200 dark:bg-gray-700"
+            }`}
+          >
+            Ano
+          </button>
+        </div>
+        <ActivityCalendar
+          year={currentYear}
+          data={activityData}
+          view={activityView}
+        />
 
         <main className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
           <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow min-h-[400px]">
