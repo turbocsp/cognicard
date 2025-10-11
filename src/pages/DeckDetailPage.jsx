@@ -5,9 +5,9 @@ import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
 import { CardEditModal } from "@/components/CardEditModal.jsx";
 import { ConfirmationModal } from "@/components/ConfirmationModal.jsx";
+import { MarkdownGuideModal } from "@/components/MarkdownGuideModal.jsx";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MarkdownGuideModal } from "@/components/MarkdownGuideModal";
 
 function DeckDetailPage() {
   const { deckId } = useParams();
@@ -15,7 +15,9 @@ function DeckDetailPage() {
   const { session } = useAuth();
   const [deck, setDeck] = useState(null);
   const [cards, setCards] = useState([]);
+  const [cardStats, setCardStats] = useState({});
   const [loading, setLoading] = useState(true);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const [newCard, setNewCard] = useState({
     front_content: "",
@@ -28,27 +30,45 @@ function DeckDetailPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cardToDelete, setCardToDelete] = useState(null);
   const [cardToEdit, setCardToEdit] = useState(null);
-  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const fetchDeckData = useCallback(async () => {
     if (!deckId) return;
     setLoading(true);
     try {
-      const { data: deckData, error: deckError } = await supabase
+      const deckPromise = supabase
         .from("decks")
         .select("name")
         .eq("id", deckId)
         .single();
-      if (deckError) throw deckError;
-      setDeck(deckData);
 
-      const { data: cardsData, error: cardsError } = await supabase
+      const cardsPromise = supabase
         .from("cards")
         .select("*")
         .eq("deck_id", deckId)
         .order("created_at");
+
+      const statsPromise = supabase.rpc("get_card_statistics", {
+        p_deck_id: deckId,
+      });
+
+      const [
+        { data: deckData, error: deckError },
+        { data: cardsData, error: cardsError },
+        { data: statsData, error: statsError },
+      ] = await Promise.all([deckPromise, cardsPromise, statsPromise]);
+
+      if (deckError) throw deckError;
+      setDeck(deckData);
+
       if (cardsError) throw cardsError;
       setCards(cardsData || []);
+
+      if (statsError) throw statsError;
+      const statsMap = (statsData || []).reduce((acc, stat) => {
+        acc[stat.card_id] = stat;
+        return acc;
+      }, {});
+      setCardStats(statsMap);
     } catch (error) {
       toast.error("Erro ao carregar dados do baralho: " + error.message);
       navigate("/dashboard");
@@ -104,7 +124,7 @@ function DeckDetailPage() {
         source_references: "",
         tags: "",
       });
-      fetchDeckData(); // Refresh cards list
+      fetchDeckData();
     }
     setIsSubmitting(false);
   };
@@ -193,11 +213,10 @@ function DeckDetailPage() {
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">Adicionar Novo Cartão</h2>
                 <button
-                  type="button"
                   onClick={() => setIsGuideOpen(true)}
-                  className="text-sm text-blue-500 dark:text-blue-400 hover:underline font-medium"
+                  className="text-sm text-blue-500 dark:text-blue-400 hover:underline"
                 >
-                  Guia
+                  Guia de Formatação
                 </button>
               </div>
               <form onSubmit={handleCreateCard} className="space-y-4">
@@ -344,26 +363,54 @@ function DeckDetailPage() {
                         </svg>
                       </button>
                     </div>
-                    <div className="prose prose-sm dark:prose-invert max-w-none border-b border-gray-200 dark:border-gray-700 pb-2 mb-2 pr-16">
+                    <div className="prose prose-sm dark:prose-invert max-w-none pr-16">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
                         {card.front_content}
                       </ReactMarkdown>
                     </div>
-                    <div className="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300 mb-2">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {card.back_content}
-                      </ReactMarkdown>
+                    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                      <div className="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {card.back_content}
+                        </ReactMarkdown>
+                      </div>
                     </div>
-                    {card.tags && card.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                        {card.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded-full"
-                          >
-                            {tag}
-                          </span>
-                        ))}
+
+                    {(cardStats[card.id]?.total_views > 0 ||
+                      (card.tags && card.tags.length > 0)) && (
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
+                        {cardStats[card.id]?.total_views > 0 && (
+                          <div className="flex items-center gap-4 text-xs">
+                            <span
+                              title="Taxa de acerto"
+                              className={
+                                cardStats[card.id].accuracy >= 75
+                                  ? "text-green-500"
+                                  : cardStats[card.id].accuracy >= 50
+                                  ? "text-yellow-500"
+                                  : "text-red-500"
+                              }
+                            >
+                              ✅ {cardStats[card.id].accuracy}%
+                            </span>
+                            <span
+                              title="Visto x vezes"
+                              className="text-gray-500 dark:text-gray-400"
+                            >
+                              👀 {cardStats[card.id].total_views}x
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {(card.tags || []).map((tag) => (
+                            <span
+                              key={tag}
+                              className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded-full"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

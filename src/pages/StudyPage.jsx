@@ -18,7 +18,6 @@ function StudyPage() {
   const [isAnswerVisible, setIsAnswerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Ref para prevenir a execução duplicada da criação de sessão
   const isFetching = useRef(false);
 
   const fetchStudySession = useCallback(async () => {
@@ -27,7 +26,6 @@ function StudyPage() {
     setLoading(true);
 
     try {
-      // ... (código de busca do baralho e dos cartões permanece o mesmo)
       const { data: deckData, error: deckError } = await supabase
         .from("decks")
         .select("name")
@@ -44,7 +42,6 @@ function StudyPage() {
       if (cardsError) throw cardsError;
       setCards(cardsData);
 
-      // ... (busca por tentativa incompleta permanece a mesma)
       const { data: incompleteAttempt, error: incompleteError } = await supabase
         .from("attempts")
         .select("*")
@@ -99,7 +96,7 @@ function StudyPage() {
       navigate(`/deck/${deckId}`);
     } finally {
       setLoading(false);
-      isFetching.current = false; // Reseta o controle ao final da execução
+      isFetching.current = false;
     }
   }, [deckId, session, navigate]);
 
@@ -107,7 +104,6 @@ function StudyPage() {
     fetchStudySession();
   }, [fetchStudySession]);
 
-  // Efeito para salvar o progresso ao sair da página (sem alterações)
   useEffect(() => {
     const saveProgress = () => {
       if (
@@ -133,7 +129,9 @@ function StudyPage() {
       }
     };
 
+    window.addEventListener("beforeunload", saveProgress);
     return () => {
+      window.removeEventListener("beforeunload", saveProgress);
       saveProgress();
     };
   }, [currentAttempt, currentCardIndex, cards]);
@@ -150,35 +148,48 @@ function StudyPage() {
   };
 
   const handleAnswer = async (userChoseCorrect) => {
-    const cardId = cards[currentCardIndex].id;
-    if (answeredCards.has(cardId) || !currentAttempt) {
+    const card = cards[currentCardIndex];
+    if (!card || answeredCards.has(card.id) || !currentAttempt) {
       setIsAnswerVisible(true);
       return;
     }
 
-    const isCorrectAnswer = cards[currentCardIndex].back_content
+    // Correctly determine if the answer was right
+    const isCorrectAnswerInCard = card.back_content
       .toLowerCase()
       .startsWith("certo.");
-    const wasCorrect = userChoseCorrect === isCorrectAnswer;
+    const wasCorrect = userChoseCorrect === isCorrectAnswerInCard;
 
     const newAnsweredCards = new Map(answeredCards);
-    newAnsweredCards.set(cardId, wasCorrect);
+    newAnsweredCards.set(card.id, wasCorrect);
     setAnsweredCards(newAnsweredCards);
+
+    const { error: logError } = await supabase.from("study_log").insert({
+      card_id: card.id,
+      attempt_id: currentAttempt.id,
+      user_id: session.user.id,
+      was_correct: wasCorrect,
+    });
+
+    if (logError) {
+      toast.error("Erro ao registrar resposta no log.");
+      return;
+    }
 
     const updates = {
       correct_count: currentAttempt.correct_count + (wasCorrect ? 1 : 0),
       incorrect_count: currentAttempt.incorrect_count + (wasCorrect ? 0 : 1),
     };
 
-    const { data, error } = await supabase
+    const { data, error: attemptError } = await supabase
       .from("attempts")
       .update(updates)
       .eq("id", currentAttempt.id)
       .select()
       .single();
 
-    if (error) {
-      toast.error("Erro ao registrar resposta.");
+    if (attemptError) {
+      toast.error("Erro ao atualizar o resumo da tentativa.");
     } else {
       setCurrentAttempt(data);
     }
@@ -219,6 +230,9 @@ function StudyPage() {
       if (firstUnanswered !== -1) {
         setIsAnswerVisible(false);
         setCurrentCardIndex(firstUnanswered);
+      } else {
+        toast.success("Todos os cartões foram respondidos!");
+        navigate(`/deck/${deckId}`);
       }
     }
   };
@@ -298,10 +312,10 @@ function StudyPage() {
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 space-y-4 w-full mb-4">
           <h2 className="text-lg font-semibold mb-2 text-center">
-            {deck?.name || "Certo/Errado"}
+            {deck?.name}
           </h2>
 
-          <div className="text-center py-6 min-h-[100px] flex items-center justify-center prose dark:prose-invert max-w-none">
+          <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none text-center py-6 min-h-[100px] flex items-center justify-center">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {currentCard.front_content}
             </ReactMarkdown>
@@ -320,7 +334,7 @@ function StudyPage() {
                   ? "Você Acertou!"
                   : "Você Errou!"}
               </p>
-              <div className="mt-2 text-base prose dark:prose-invert max-w-none">
+              <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none mt-2">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {currentCard.back_content}
                 </ReactMarkdown>
