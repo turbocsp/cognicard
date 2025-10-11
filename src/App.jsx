@@ -7,6 +7,7 @@ import DeckDetailPage from "@/pages/DeckDetailPage.jsx";
 import StudyPage from "@/pages/StudyPage.jsx";
 import ImportPage from "@/pages/ImportPage.jsx";
 import StatsPage from "@/pages/StatsPage.jsx";
+import SearchPage from "@/pages/SearchPage.jsx";
 
 function ProtectedRoute() {
   const { session } = useAuth();
@@ -29,6 +30,7 @@ function App() {
         <Route path="/deck/:deckId/study" element={<StudyPage />} />
         <Route path="/deck/:deckId/import" element={<ImportPage />} />
         <Route path="/stats" element={<StatsPage />} />
+        <Route path="/search" element={<SearchPage />} />
       </Route>
     </Routes>
   );

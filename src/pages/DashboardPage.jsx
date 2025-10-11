@@ -8,6 +8,7 @@ import { InlineEdit } from "@/components/InlineEdit";
 import { ContextMenu } from "@/components/ContextMenu";
 import { MoveDeckModal } from "@/components/MoveDeckModal";
 import { MoveFolderModal } from "@/components/MoveFolderModal";
+import { GlobalSearch } from "@/components/GlobalSearch";
 
 export function DashboardPage() {
   const { session, theme, toggleTheme } = useAuth();
@@ -509,6 +510,8 @@ export function DashboardPage() {
             </button>
           </div>
         </header>
+
+        <GlobalSearch />
 
         <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow min-h-[400px]">
