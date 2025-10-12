@@ -14,7 +14,7 @@ import {
 import { ptBR } from "date-fns/locale";
 import { Tooltip } from "react-tooltip";
 
-export function ActivityCalendar({ year, data, view = "year" }) {
+export function ActivityCalendar({ year, data, view = "year", onDayClick }) {
   const today = new Date();
 
   let startDate, endDate;
@@ -84,23 +84,30 @@ export function ActivityCalendar({ year, data, view = "year" }) {
             {daysInMonth.map((day) => {
               const formattedDate = format(day, "yyyy-MM-dd");
               const count = dataMap.get(formattedDate) || 0;
+              const isClickable = count > 0;
               return (
-                <div
+                <button
                   key={formattedDate}
+                  disabled={!isClickable}
+                  onClick={() => isClickable && onDayClick(day)}
                   data-tooltip-id="activity-tooltip"
                   data-tooltip-content={`${count} sessões em ${format(
                     day,
                     "dd/MM/yyyy",
                     { locale: ptBR }
                   )}`}
-                  className={`w-full aspect-square rounded-sm flex items-center justify-center ${getDayColor(
+                  className={`w-full aspect-square rounded-sm flex items-center justify-center transition-all ${getDayColor(
                     count
-                  )}`}
+                  )} ${
+                    isClickable
+                      ? "cursor-pointer hover:ring-2 hover:ring-offset-2 hover:ring-offset-gray-800 hover:ring-blue-400"
+                      : ""
+                  }`}
                 >
-                  <span className="text-gray-700 dark:text-gray-200">
+                  <span className="text-gray-800 dark:text-gray-200 text-[10px]">
                     {format(day, "d")}
                   </span>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -129,25 +136,32 @@ export function ActivityCalendar({ year, data, view = "year" }) {
             const formattedDate = format(day, "yyyy-MM-dd");
             const count = dataMap.get(formattedDate) || 0;
             const isCurrentMonth = isSameMonth(day, today);
+            const isClickable = count > 0;
             return (
-              <div
+              <button
                 key={formattedDate}
+                disabled={!isClickable}
+                onClick={() => isClickable && onDayClick(day)}
                 data-tooltip-id="activity-tooltip"
                 data-tooltip-content={`${count} sessões em ${format(
                   day,
                   "dd/MM/yyyy",
                   { locale: ptBR }
                 )}`}
-                className={`w-full aspect-square rounded-md flex items-center justify-center ${getDayColor(
+                className={`w-full aspect-square rounded-md flex items-center justify-center transition-all ${getDayColor(
                   count
                 )} ${isSameDay(day, today) ? "ring-2 ring-blue-500" : ""} ${
                   !isCurrentMonth ? "opacity-40" : ""
+                } ${
+                  isClickable
+                    ? "cursor-pointer hover:ring-2 hover:ring-offset-2 hover:ring-offset-gray-800 hover:ring-blue-400"
+                    : ""
                 }`}
               >
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
                   {format(day, "d")}
                 </span>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -162,26 +176,33 @@ export function ActivityCalendar({ year, data, view = "year" }) {
           {days.map((day) => {
             const formattedDate = format(day, "yyyy-MM-dd");
             const count = dataMap.get(formattedDate) || 0;
+            const isClickable = count > 0;
             return (
               <div key={formattedDate} className="text-center">
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
                   {format(day, "EEE", { locale: ptBR })}
                 </div>
-                <div
+                <button
+                  disabled={!isClickable}
+                  onClick={() => isClickable && onDayClick(day)}
                   data-tooltip-id="activity-tooltip"
                   data-tooltip-content={`${count} sessões em ${format(
                     day,
                     "dd/MM/yyyy",
                     { locale: ptBR }
                   )}`}
-                  className={`w-full aspect-square rounded-md flex items-center justify-center ${getDayColor(
+                  className={`w-full aspect-square rounded-md flex items-center justify-center transition-all ${getDayColor(
                     count
-                  )} ${isSameDay(day, today) ? "ring-2 ring-blue-500" : ""}`}
+                  )} ${isSameDay(day, today) ? "ring-2 ring-blue-500" : ""} ${
+                    isClickable
+                      ? "cursor-pointer hover:ring-2 hover:ring-offset-2 hover:ring-offset-gray-800 hover:ring-blue-400"
+                      : ""
+                  }`}
                 >
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
                     {format(day, "d")}
                   </span>
-                </div>
+                </button>
               </div>
             );
           })}

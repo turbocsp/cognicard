@@ -8,8 +8,10 @@ import { InlineEdit } from "@/components/InlineEdit";
 import { ContextMenu } from "@/components/ContextMenu";
 import { MoveDeckModal } from "@/components/MoveDeckModal";
 import { MoveFolderModal } from "@/components/MoveFolderModal";
-import { GlobalSearch } from "@/components/GlobalSearch";
 import { ActivityCalendar } from "@/components/ActivityCalendar";
+import { DailySummaryModal } from "@/components/DailySummaryModal";
+import { GlobalSearch } from "@/components/GlobalSearch";
+import { Clock } from "@/components/Clock";
 
 export function DashboardPage() {
   const { session, theme, toggleTheme } = useAuth();
@@ -31,19 +33,20 @@ export function DashboardPage() {
   const [contextMenu, setContextMenu] = useState(null);
   const [openFolders, setOpenFolders] = useState(new Set());
   const [touchTimeout, setTouchTimeout] = useState(null);
-
-  // Gamification State
   const [streakData, setStreakData] = useState({
     current_streak: 0,
     longest_streak: 0,
   });
   const [activityData, setActivityData] = useState([]);
   const [currentYear] = useState(new Date().getFullYear());
-  const [activityView, setActivityView] = useState("week"); // 'week', 'month', 'year'
+  const [activityView, setActivityView] = useState("week");
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
 
-  const fetchInitialData = useCallback(async () => {
+  const fetchDashboardData = useCallback(async () => {
     if (!session) return;
     setLoading(true);
+
     const deckPromise = supabase
       .from("decks")
       .select("*")
@@ -63,8 +66,8 @@ export function DashboardPage() {
     const [
       { data: deckData, error: deckError },
       { data: folderData, error: folderError },
-      { data: streakResult, error: streakError },
-      { data: activityResult, error: activityError },
+      { data: streak, error: streakError },
+      { data: activity, error: activityError },
     ] = await Promise.all([
       deckPromise,
       folderPromise,
@@ -74,25 +77,27 @@ export function DashboardPage() {
 
     if (deckError) toast.error(deckError.message);
     else setDecks(deckData || []);
-
     if (folderError) toast.error(folderError.message);
     else setFolders(folderData || []);
 
-    if (streakError) toast.error(`Streak Error: ${streakError.message}`);
-    else
-      setStreakData(
-        streakResult[0] || { current_streak: 0, longest_streak: 0 }
-      );
+    if (streakError) {
+      console.error("Streak Error:", streakError.message);
+    } else if (streak && streak.length > 0) {
+      setStreakData(streak[0]);
+    }
 
-    if (activityError) toast.error(`Activity Error: ${activityError.message}`);
-    else setActivityData(activityResult || []);
+    if (activityError) {
+      console.error("Activity Error:", activityError.message);
+    } else {
+      setActivityData(activity || []);
+    }
 
     setLoading(false);
   }, [session, currentYear]);
 
   useEffect(() => {
-    fetchInitialData();
-  }, [fetchInitialData]);
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   useEffect(() => {
     const buildTree = (folders, decks) => {
@@ -153,6 +158,11 @@ export function DashboardPage() {
     setTreeData(buildTree(folders, decks));
   }, [folders, decks]);
 
+  const handleDayClick = (day) => {
+    setSelectedDate(day);
+    setIsSummaryModalOpen(true);
+  };
+
   const handleCreate = async (type, e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -194,7 +204,7 @@ export function DashboardPage() {
       );
       setNewItemName("");
       if (parentId) setOpenFolders((prev) => new Set(prev).add(parentId));
-      fetchInitialData();
+      fetchDashboardData();
     }
     setIsSubmitting(false);
   };
@@ -242,7 +252,7 @@ export function DashboardPage() {
 
     setEditingItemId(null);
     setContextMenu(null);
-    fetchInitialData();
+    fetchDashboardData();
   };
 
   const handleMoveDeck = async (newFolderId) => {
@@ -272,7 +282,7 @@ export function DashboardPage() {
     else toast.success(`Baralho movido com sucesso!`);
 
     setDeckToMove(null);
-    fetchInitialData();
+    fetchDashboardData();
   };
 
   const handleMoveFolder = async (newParentFolderId) => {
@@ -302,7 +312,7 @@ export function DashboardPage() {
     else toast.success(`Pasta movida com sucesso!`);
 
     setFolderToMove(null);
-    fetchInitialData();
+    fetchDashboardData();
   };
 
   const handleDelete = async () => {
@@ -317,7 +327,7 @@ export function DashboardPage() {
     else toast.success(`"${name}" foi excluído(a).`);
 
     setItemToDelete(null);
-    fetchInitialData();
+    fetchDashboardData();
   };
 
   const handleSignOut = async () => {
@@ -490,7 +500,7 @@ export function DashboardPage() {
       onClick={() => setContextMenu(null)}
     >
       <div className="max-w-7xl mx-auto">
-        <header className="flex justify-between items-center mb-8">
+        <header className="flex justify-between items-center mb-4">
           <h1 className="text-3xl font-bold">Painel de Controle</h1>
           <div className="flex items-center gap-4">
             <Link
@@ -503,37 +513,7 @@ export function DashboardPage() {
               onClick={toggleTheme}
               className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
             >
-              {theme === "light" ? (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-                  />
-                </svg>
-              )}
+              {theme === "light" ? "🌙" : "☀️"}
             </button>
             <button
               onClick={handleSignOut}
@@ -544,76 +524,80 @@ export function DashboardPage() {
           </div>
         </header>
 
-        <GlobalSearch />
+        <Clock />
 
-        <div className="my-8 grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Sequência Atual
-            </p>
-            <p className="text-2xl font-bold">
-              🔥 {streakData.current_streak}{" "}
-              {streakData.current_streak === 1 ? "dia" : "dias"}
-            </p>
-          </div>
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Maior Sequência
-            </p>
-            <p className="text-2xl font-bold">
-              🏆 {streakData.longest_streak}{" "}
-              {streakData.longest_streak === 1 ? "dia" : "dias"}
-            </p>
-          </div>
-        </div>
-
-        <div className="mb-4 flex justify-center sm:justify-end gap-2">
-          <button
-            onClick={() => setActivityView("week")}
-            className={`px-3 py-1 text-sm rounded-md ${
-              activityView === "week"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-200 dark:bg-gray-700"
-            }`}
-          >
-            Semana
-          </button>
-          <button
-            onClick={() => setActivityView("month")}
-            className={`px-3 py-1 text-sm rounded-md ${
-              activityView === "month"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-200 dark:bg-gray-700"
-            }`}
-          >
-            Mês
-          </button>
-          <button
-            onClick={() => setActivityView("year")}
-            className={`px-3 py-1 text-sm rounded-md ${
-              activityView === "year"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-200 dark:bg-gray-700"
-            }`}
-          >
-            Ano
-          </button>
-        </div>
-        <ActivityCalendar
-          year={currentYear}
-          data={activityData}
-          view={activityView}
-        />
-
-        <main className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
-          <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow min-h-[400px]">
-            {loading ? (
-              <p>Carregando...</p>
-            ) : (
-              treeData.map((node) => (
-                <FileSystemNode key={node.id} node={node} depth={0} />
-              ))
-            )}
+        <main className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-6">
+          <div className="lg:col-span-2 space-y-8">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+              <div className="flex justify-between items-center mb-4">
+                <div className="flex items-center gap-4">
+                  <div className="text-center">
+                    <span className="text-2xl font-bold">
+                      {streakData.current_streak}
+                    </span>
+                    <span className="text-sm block text-gray-500">
+                      Sequência Atual 🔥
+                    </span>
+                  </div>
+                  <div className="text-center">
+                    <span className="text-2xl font-bold">
+                      {streakData.longest_streak}
+                    </span>
+                    <span className="text-sm block text-gray-500">
+                      Maior Sequência 🏆
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 rounded-md p-1 bg-gray-100 dark:bg-gray-700">
+                  <button
+                    onClick={() => setActivityView("week")}
+                    className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
+                      activityView === "week"
+                        ? "bg-white dark:bg-gray-900 text-blue-500"
+                        : "text-gray-600 dark:text-gray-300"
+                    }`}
+                  >
+                    Semana
+                  </button>
+                  <button
+                    onClick={() => setActivityView("month")}
+                    className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
+                      activityView === "month"
+                        ? "bg-white dark:bg-gray-900 text-blue-500"
+                        : "text-gray-600 dark:text-gray-300"
+                    }`}
+                  >
+                    Mês
+                  </button>
+                  <button
+                    onClick={() => setActivityView("year")}
+                    className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
+                      activityView === "year"
+                        ? "bg-white dark:bg-gray-900 text-blue-500"
+                        : "text-gray-600 dark:text-gray-300"
+                    }`}
+                  >
+                    Ano
+                  </button>
+                </div>
+              </div>
+              <ActivityCalendar
+                data={activityData}
+                year={currentYear}
+                view={activityView}
+                onDayClick={handleDayClick}
+              />
+            </div>
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow min-h-[200px]">
+              <GlobalSearch />
+              {loading ? (
+                <p>Carregando...</p>
+              ) : (
+                treeData.map((node) => (
+                  <FileSystemNode key={node.id} node={node} depth={0} />
+                ))
+              )}
+            </div>
           </div>
 
           <div
@@ -703,6 +687,12 @@ export function DashboardPage() {
         onConfirm={handleMoveFolder}
         allFolders={folders}
         folderToMove={folderToMove}
+      />
+      <DailySummaryModal
+        isOpen={isSummaryModalOpen}
+        onClose={() => setIsSummaryModalOpen(false)}
+        date={selectedDate}
+        session={session}
       />
     </div>
   );
