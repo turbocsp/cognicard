@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-export function Clock() {
+function Clock() {
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -13,15 +13,31 @@ export function Clock() {
     };
   }, []);
 
-  const formattedTime = new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "full",
-    timeStyle: "medium",
-    timeZone: "America/Sao_Paulo",
-  }).format(time);
+  const formatTime = (date) => {
+    return date.toLocaleTimeString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
+
+  const formatDate = (date) => {
+    return date.toLocaleDateString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
 
   return (
-    <div className="text-sm text-gray-600 dark:text-gray-400 text-center lg:text-right">
-      <span>{formattedTime}</span>
+    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+      <p>{formatDate(time)}</p>
+      <p>{formatTime(time)} (Horário de Brasília)</p>
     </div>
   );
 }
+
+export default Clock;

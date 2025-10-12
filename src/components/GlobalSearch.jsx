@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-export function GlobalSearch() {
+function GlobalSearch() {
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
 
@@ -9,26 +9,27 @@ export function GlobalSearch() {
     e.preventDefault();
     if (query.trim()) {
       navigate(`/search?q=${encodeURIComponent(query.trim())}`);
+      setQuery("");
     }
   };
 
   return (
-    <form onSubmit={handleSearch} className="w-full mb-8">
+    <form onSubmit={handleSearch} className="w-full max-w-md">
       <div className="relative">
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar em todos os cartões..."
-          className="w-full p-4 pl-12 text-lg bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full p-2 pl-10 border rounded-md bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
           <svg
-            className="h-6 w-6 text-gray-400"
-            xmlns="http://www.w3.org/2000/svg"
+            className="w-5 h-5 text-gray-500 dark:text-gray-400"
             fill="none"
-            viewBox="0 0 24 24"
             stroke="currentColor"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
           >
             <path
               strokeLinecap="round"
@@ -42,3 +43,5 @@ export function GlobalSearch() {
     </form>
   );
 }
+
+export default GlobalSearch;

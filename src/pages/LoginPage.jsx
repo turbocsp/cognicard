@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/supabaseClient";
 import { toast } from "react-hot-toast";
+import Logo from "@/components/Logo";
 
 function LoginPage() {
   const [email, setEmail] = useState("");
@@ -18,12 +19,10 @@ function LoginPage() {
         password,
       });
       if (error) {
-        // Lança o erro para ser pego pelo bloco catch
         throw error;
       }
       navigate("/dashboard");
     } catch (error) {
-      // Verifica se o erro é de "Invalid login credentials"
       if (error.message.includes("Invalid login credentials")) {
         toast.error("Email ou senha inválidos.");
       } else {
@@ -37,9 +36,9 @@ function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
       <div className="p-8 max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold text-center mb-6 text-gray-900 dark:text-white">
-          Entrar no CogniCard
-        </h1>
+        <div className="flex justify-center mb-6">
+          <Logo />
+        </div>
         <form onSubmit={handleLogin}>
           <div className="mb-4">
             <label

@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { supabase } from "@/supabaseClient";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
+import Logo from "@/components/Logo";
 
 const SignUpPage = () => {
   const [email, setEmail] = useState("");
@@ -29,14 +30,17 @@ const SignUpPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-      <div className="p-8 max-w-md w-full bg-gray-800 rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold text-center mb-6">
-          Criar Conta no CogniCard
-        </h1>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+      <div className="p-8 max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-md">
+        <div className="flex justify-center mb-6">
+          <Logo />
+        </div>
         <form onSubmit={handleSignUp} className="space-y-6">
           <div>
-            <label className="block mb-2 text-sm font-medium" htmlFor="email">
+            <label
+              className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300"
+              htmlFor="email"
+            >
               Email
             </label>
             <input
@@ -45,12 +49,12 @@ const SignUpPage = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-3 py-2 border rounded-md bg-gray-700 border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border rounded-md bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
             <label
-              className="block mb-2 text-sm font-medium"
+              className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300"
               htmlFor="password"
             >
               Senha
@@ -61,7 +65,7 @@ const SignUpPage = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-3 py-2 border rounded-md bg-gray-700 border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border rounded-md bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <button
@@ -72,11 +76,11 @@ const SignUpPage = () => {
             {loading ? "Cadastrando..." : "Cadastrar"}
           </button>
         </form>
-        <p className="text-center text-sm text-gray-400 mt-6">
+        <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
           Já tem uma conta?{" "}
           <Link
             to="/login"
-            className="font-medium text-blue-400 hover:underline"
+            className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
           >
             Faça o login
           </Link>

@@ -1,0 +1,12 @@
+<!--
+Logo Vetorizado Cognicard - Versão Colorida
+Cores: Verde Sucesso (#1E9E6A), Grafite Foco (#334155), Branco (#FFFFFF)
+-->
+<svg width="100%" height="100%" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <g transform="skewX(-10) rotate(-5 50 50)">
+    <path d="M20 18 H 60 A 12 12 0 0 1 72 30 V 78 A 12 12 0 0 1 60 90 H 20 A 12 12 0 0 1 8 78 V 30 A 12 12 0 0 1 20 18 Z" fill="#334155" opacity="0.5"/>
+    <path d="M30 15 H 70 A 12 12 0 0 1 82 27 V 75 A 12 12 0 0 1 70 87 H 30 A 12 12 0 0 1 18 75 V 27 A 12 12 0 0 1 30 15 Z" fill="#334155"/>
+    <path d="M40 12 H 80 A 12 12 0 0 1 92 24 V 72 A 12 12 0 0 1 80 84 H 40 A 12 12 0 0 1 28 72 V 24 A 12 12 0 0 1 40 12 Z" fill="#1E9E6A"/>
+    <path d="M52 48 L63 59 L82 40" stroke="white" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

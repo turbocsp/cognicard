@@ -237,3 +237,5 @@ export function DailySummaryModal({ isOpen, onClose, date, session }) {
     </div>
   );
 }
+
+export default DailySummaryModal;

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/supabaseClient";
 import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
@@ -8,14 +7,14 @@ import { InlineEdit } from "@/components/InlineEdit";
 import { ContextMenu } from "@/components/ContextMenu";
 import { MoveDeckModal } from "@/components/MoveDeckModal";
 import { MoveFolderModal } from "@/components/MoveFolderModal";
-import { ActivityCalendar } from "@/components/ActivityCalendar";
-import { DailySummaryModal } from "@/components/DailySummaryModal";
-import { GlobalSearch } from "@/components/GlobalSearch";
-import { Clock } from "@/components/Clock";
+import { Link } from "react-router-dom";
+import GlobalSearch from "@/components/GlobalSearch";
+import ActivityCalendar from "@/components/ActivityCalendar";
+import DailySummaryModal from "@/components/DailySummaryModal";
+import Clock from "@/components/Clock";
 
 export function DashboardPage() {
-  const { session, theme, toggleTheme } = useAuth();
-  const navigate = useNavigate();
+  const { session } = useAuth();
 
   const [decks, setDecks] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -33,15 +32,15 @@ export function DashboardPage() {
   const [contextMenu, setContextMenu] = useState(null);
   const [openFolders, setOpenFolders] = useState(new Set());
   const [touchTimeout, setTouchTimeout] = useState(null);
+
   const [streakData, setStreakData] = useState({
     current_streak: 0,
     longest_streak: 0,
   });
   const [activityData, setActivityData] = useState([]);
-  const [currentYear] = useState(new Date().getFullYear());
   const [activityView, setActivityView] = useState("week");
+  const [currentYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState(null);
-  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
 
   const fetchDashboardData = useCallback(async () => {
     if (!session) return;
@@ -55,9 +54,9 @@ export function DashboardPage() {
       .from("folders")
       .select("*")
       .eq("user_id", session.user.id);
-    const streakPromise = supabase.rpc("get_study_streak", {
-      p_user_id: session.user.id,
-    });
+    const streakPromise = supabase
+      .rpc("get_study_streak", { p_user_id: session.user.id })
+      .single();
     const activityPromise = supabase.rpc("get_study_activity", {
       p_user_id: session.user.id,
       p_year: currentYear,
@@ -66,8 +65,8 @@ export function DashboardPage() {
     const [
       { data: deckData, error: deckError },
       { data: folderData, error: folderError },
-      { data: streak, error: streakError },
-      { data: activity, error: activityError },
+      { data: streakResult, error: streakError },
+      { data: activityResult, error: activityError },
     ] = await Promise.all([
       deckPromise,
       folderPromise,
@@ -77,20 +76,15 @@ export function DashboardPage() {
 
     if (deckError) toast.error(deckError.message);
     else setDecks(deckData || []);
+
     if (folderError) toast.error(folderError.message);
     else setFolders(folderData || []);
 
-    if (streakError) {
-      console.error("Streak Error:", streakError.message);
-    } else if (streak && streak.length > 0) {
-      setStreakData(streak[0]);
-    }
+    if (streakError) toast.error(`Streak Error: ${streakError.message}`);
+    else if (streakResult) setStreakData(streakResult);
 
-    if (activityError) {
-      console.error("Activity Error:", activityError.message);
-    } else {
-      setActivityData(activity || []);
-    }
+    if (activityError) toast.error(`Activity Error: ${activityError.message}`);
+    else setActivityData(activityResult || []);
 
     setLoading(false);
   }, [session, currentYear]);
@@ -113,7 +107,6 @@ export function DashboardPage() {
           data: folder,
         });
       });
-
       decks.forEach((deck) => {
         nodeMap.set(deck.id, {
           id: deck.id,
@@ -128,12 +121,9 @@ export function DashboardPage() {
           node.type === "folder"
             ? node.data.parent_folder_id
             : node.data.folder_id;
-
         if (parentId && nodeMap.has(parentId)) {
           const parent = nodeMap.get(parentId);
-          if (parent.children) {
-            parent.children.push(node);
-          }
+          if (parent.children) parent.children.push(node);
         } else {
           tree.push(node);
         }
@@ -146,37 +136,26 @@ export function DashboardPage() {
       };
 
       nodeMap.forEach((node) => {
-        if (node.children) {
-          node.children.sort(sortNodes);
-        }
+        if (node.children) node.children.sort(sortNodes);
       });
-
       tree.sort(sortNodes);
       return tree;
     };
-
     setTreeData(buildTree(folders, decks));
   }, [folders, decks]);
-
-  const handleDayClick = (day) => {
-    setSelectedDate(day);
-    setIsSummaryModalOpen(true);
-  };
 
   const handleCreate = async (type, e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!session || !newItemName.trim()) {
+    if (!newItemName.trim()) {
       toast.error("O nome não pode estar vazio.");
       return;
     }
-
     const parentId = newParentFolderId === "root" ? null : newParentFolderId;
     const siblings =
       type === "folder"
         ? folders.filter((f) => f.parent_folder_id === parentId)
         : decks.filter((d) => d.folder_id === parentId);
-
     if (
       siblings.some(
         (s) => s.name.toLowerCase() === newItemName.trim().toLowerCase()
@@ -187,7 +166,6 @@ export function DashboardPage() {
       );
       return;
     }
-
     setIsSubmitting(true);
     const table = type === "deck" ? "decks" : "folders";
     const payload = { name: newItemName.trim(), user_id: session.user.id };
@@ -195,7 +173,6 @@ export function DashboardPage() {
     if (type === "folder") payload.parent_folder_id = parentId;
 
     const { error } = await supabase.from(table).insert(payload);
-
     if (error) {
       toast.error(error.message);
     } else {
@@ -211,22 +188,18 @@ export function DashboardPage() {
 
   const handleRename = async (newName) => {
     if (!editingItemId) return;
-
     const item =
       folders.find((f) => f.id === editingItemId) ||
       decks.find((d) => d.id === editingItemId);
     if (!item) return;
-
     const type = "parent_folder_id" in item ? "folder" : "deck";
     const parentId = type === "folder" ? item.parent_folder_id : item.folder_id;
-
     const siblingFolders = folders.filter(
       (f) => f.parent_folder_id === parentId && f.id !== editingItemId
     );
     const siblingDecks = decks.filter(
       (d) => d.folder_id === parentId && d.id !== editingItemId
     );
-
     if (
       (type === "folder" &&
         siblingFolders.some(
@@ -241,15 +214,12 @@ export function DashboardPage() {
       setEditingItemId(null);
       return;
     }
-
     const { error } = await supabase
       .from(type === "folder" ? "folders" : "decks")
       .update({ name: newName })
       .eq("id", editingItemId);
-
     if (error) toast.error(error.message);
     else toast.success("Renomeado com sucesso!");
-
     setEditingItemId(null);
     setContextMenu(null);
     fetchDashboardData();
@@ -257,14 +227,12 @@ export function DashboardPage() {
 
   const handleMoveDeck = async (newFolderId) => {
     if (!deckToMove) return;
-
     const isDuplicate = decks.some(
       (d) =>
         d.name.toLowerCase() === deckToMove.name.toLowerCase() &&
         d.folder_id === newFolderId &&
         d.id !== deckToMove.id
     );
-
     if (isDuplicate) {
       toast.error(
         `Já existe um baralho com o nome "${deckToMove.name}" na pasta de destino.`
@@ -272,29 +240,24 @@ export function DashboardPage() {
       setDeckToMove(null);
       return;
     }
-
     const { error } = await supabase
       .from("decks")
       .update({ folder_id: newFolderId })
       .eq("id", deckToMove.id);
-
     if (error) toast.error(`Erro ao mover o baralho: ${error.message}`);
     else toast.success(`Baralho movido com sucesso!`);
-
     setDeckToMove(null);
     fetchDashboardData();
   };
 
   const handleMoveFolder = async (newParentFolderId) => {
     if (!folderToMove) return;
-
     const isDuplicate = folders.some(
       (f) =>
         f.name.toLowerCase() === folderToMove.name.toLowerCase() &&
         f.parent_folder_id === newParentFolderId &&
         f.id !== folderToMove.id
     );
-
     if (isDuplicate) {
       toast.error(
         `Já existe uma pasta com o nome "${folderToMove.name}" no destino.`
@@ -302,15 +265,12 @@ export function DashboardPage() {
       setFolderToMove(null);
       return;
     }
-
     const { error } = await supabase
       .from("folders")
       .update({ parent_folder_id: newParentFolderId })
       .eq("id", folderToMove.id);
-
     if (error) toast.error(`Erro ao mover a pasta: ${error.message}`);
     else toast.success(`Pasta movida com sucesso!`);
-
     setFolderToMove(null);
     fetchDashboardData();
   };
@@ -322,17 +282,10 @@ export function DashboardPage() {
       .from(type === "folder" ? "folders" : "decks")
       .delete()
       .eq("id", id);
-
     if (error) toast.error(`Erro ao excluir: ${error.message}`);
     else toast.success(`"${name}" foi excluído(a).`);
-
     setItemToDelete(null);
     fetchDashboardData();
-  };
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/login");
   };
 
   const toggleFolder = (folderId) => {
@@ -348,7 +301,6 @@ export function DashboardPage() {
     if (!contextMenu) return [];
     const { item } = contextMenu;
     const items = [];
-
     if (item.type === "folder") {
       items.push({
         label: "Nova Pasta Aqui",
@@ -360,7 +312,6 @@ export function DashboardPage() {
       });
       items.push({ isSeparator: true });
     }
-
     items.push({
       label: "Editar Nome",
       action: () => setEditingItemId(item.id),
@@ -378,7 +329,6 @@ export function DashboardPage() {
       action: () => setItemToDelete(item),
       isDanger: true,
     });
-
     return items;
   };
 
@@ -415,10 +365,8 @@ export function DashboardPage() {
 
   const handleTouchEnd = (e) => {
     e.stopPropagation();
-    if (touchTimeout) {
-      clearTimeout(touchTimeout);
-      setTouchTimeout(null);
-    }
+    if (touchTimeout) clearTimeout(touchTimeout);
+    setTouchTimeout(null);
   };
 
   const FileSystemNode = ({ node, depth }) => {
@@ -495,101 +443,77 @@ export function DashboardPage() {
   };
 
   return (
-    <div
-      className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-4 sm:p-8"
-      onClick={() => setContextMenu(null)}
-    >
-      <div className="max-w-7xl mx-auto">
-        <header className="flex justify-between items-center mb-4">
-          <h1 className="text-3xl font-bold">Painel de Controle</h1>
-          <div className="flex items-center gap-4">
-            <Link
-              to="/stats"
-              className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              Estatísticas
-            </Link>
+    <div className="min-h-screen pb-8" onClick={() => setContextMenu(null)}>
+      <main className="space-y-8">
+        <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+            <div>
+              <h2 className="text-xl font-bold">Resumo de Atividade</h2>
+              <Clock />
+            </div>
+            <div className="flex items-center gap-4 text-center">
+              <div>
+                <p className="text-2xl font-bold">
+                  🔥 {streakData.current_streak}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Sequência Atual
+                </p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  🏆 {streakData.longest_streak}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Maior Sequência
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end items-center gap-2 mb-2">
             <button
-              onClick={toggleTheme}
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+              onClick={() => setActivityView("week")}
+              className={`px-3 py-1 text-xs rounded-md ${
+                activityView === "week"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-200 dark:bg-gray-700"
+              }`}
             >
-              {theme === "light" ? "🌙" : "☀️"}
+              Semana
             </button>
             <button
-              onClick={handleSignOut}
-              className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-md transition"
+              onClick={() => setActivityView("month")}
+              className={`px-3 py-1 text-xs rounded-md ${
+                activityView === "month"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-200 dark:bg-gray-700"
+              }`}
             >
-              Sair
+              Mês
+            </button>
+            <button
+              onClick={() => setActivityView("year")}
+              className={`px-3 py-1 text-xs rounded-md ${
+                activityView === "year"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-200 dark:bg-gray-700"
+              }`}
+            >
+              Ano
             </button>
           </div>
-        </header>
+          <ActivityCalendar
+            year={currentYear}
+            data={activityData}
+            view={activityView}
+            onDayClick={(date) => setSelectedDate(date)}
+          />
+        </div>
 
-        <Clock />
-
-        <main className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-6">
-          <div className="lg:col-span-2 space-y-8">
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-4">
-                  <div className="text-center">
-                    <span className="text-2xl font-bold">
-                      {streakData.current_streak}
-                    </span>
-                    <span className="text-sm block text-gray-500">
-                      Sequência Atual 🔥
-                    </span>
-                  </div>
-                  <div className="text-center">
-                    <span className="text-2xl font-bold">
-                      {streakData.longest_streak}
-                    </span>
-                    <span className="text-sm block text-gray-500">
-                      Maior Sequência 🏆
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 rounded-md p-1 bg-gray-100 dark:bg-gray-700">
-                  <button
-                    onClick={() => setActivityView("week")}
-                    className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
-                      activityView === "week"
-                        ? "bg-white dark:bg-gray-900 text-blue-500"
-                        : "text-gray-600 dark:text-gray-300"
-                    }`}
-                  >
-                    Semana
-                  </button>
-                  <button
-                    onClick={() => setActivityView("month")}
-                    className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
-                      activityView === "month"
-                        ? "bg-white dark:bg-gray-900 text-blue-500"
-                        : "text-gray-600 dark:text-gray-300"
-                    }`}
-                  >
-                    Mês
-                  </button>
-                  <button
-                    onClick={() => setActivityView("year")}
-                    className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
-                      activityView === "year"
-                        ? "bg-white dark:bg-gray-900 text-blue-500"
-                        : "text-gray-600 dark:text-gray-300"
-                    }`}
-                  >
-                    Ano
-                  </button>
-                </div>
-              </div>
-              <ActivityCalendar
-                data={activityData}
-                year={currentYear}
-                view={activityView}
-                onDayClick={handleDayClick}
-              />
-            </div>
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow min-h-[200px]">
-              <GlobalSearch />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow min-h-[400px]">
+            <GlobalSearch />
+            <div className="mt-4">
               {loading ? (
                 <p>Carregando...</p>
               ) : (
@@ -599,7 +523,6 @@ export function DashboardPage() {
               )}
             </div>
           </div>
-
           <div
             className="lg:col-span-1 space-y-6"
             onClick={(e) => e.stopPropagation()}
@@ -615,7 +538,7 @@ export function DashboardPage() {
                   value={newItemName}
                   onChange={(e) => setNewItemName(e.target.value)}
                   placeholder="Ex: Biologia Celular"
-                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md"
+                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
               <div className="mt-4">
@@ -625,7 +548,7 @@ export function DashboardPage() {
                 <select
                   value={newParentFolderId}
                   onChange={(e) => setNewParentFolderId(e.target.value)}
-                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md"
+                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="root">Raiz</option>
                   {renderFolderOptions(treeData)}
@@ -635,22 +558,22 @@ export function DashboardPage() {
                 <button
                   onClick={(e) => handleCreate("deck", e)}
                   disabled={isSubmitting || !newItemName}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-gray-500"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md disabled:opacity-50"
                 >
                   Criar Baralho
                 </button>
                 <button
                   onClick={(e) => handleCreate("folder", e)}
                   disabled={isSubmitting || !newItemName}
-                  className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-md disabled:bg-gray-500"
+                  className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-md disabled:opacity-50"
                 >
                   Criar Pasta
                 </button>
               </div>
             </div>
           </div>
-        </main>
-      </div>
+        </div>
+      </main>
 
       {contextMenu && (
         <ContextMenu
@@ -688,9 +611,11 @@ export function DashboardPage() {
         allFolders={folders}
         folderToMove={folderToMove}
       />
+
+      {/* CORREÇÃO APLICADA AQUI */}
       <DailySummaryModal
-        isOpen={isSummaryModalOpen}
-        onClose={() => setIsSummaryModalOpen(false)}
+        isOpen={!!selectedDate}
+        onClose={() => setSelectedDate(null)}
         date={selectedDate}
         session={session}
       />

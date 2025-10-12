@@ -229,3 +229,5 @@ export function ActivityCalendar({ year, data, view = "year", onDayClick }) {
     </div>
   );
 }
+
+export default ActivityCalendar;
