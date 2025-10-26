@@ -1,405 +1,695 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
-import { supabase } from "@/supabaseClient";
+// src/pages/StudyPage.jsx
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/AuthContext";
-import { toast } from "react-hot-toast";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import attemptService from "../services/attemptService";
+import deckService from "../services/deckService";
+import { supabase } from "../supabaseClient";
 
-function StudyPage() {
+// Função para embaralhar as cartas usando Fisher-Yates algorithm
+const shuffleDeck = (cards) => {
+  const shuffled = [...cards];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
+// Função para detectar URLs e transformar em links
+const formatSourcesWithLinks = (sources) => {
+  if (!sources) return [];
+
+  if (Array.isArray(sources)) {
+    return sources.map((source) => {
+      // Verifica se é uma URL
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const matches = source.match(urlRegex);
+
+      if (matches) {
+        // Substitui URLs por links
+        let formattedSource = source;
+        matches.forEach((url) => {
+          formattedSource = formattedSource.replace(
+            url,
+            `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">${url}</a>`
+          );
+        });
+        return formattedSource;
+      }
+      return source;
+    });
+  } else {
+    // Se for string única
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const matches = sources.match(urlRegex);
+
+    if (matches) {
+      let formattedSource = sources;
+      matches.forEach((url) => {
+        formattedSource = formattedSource.replace(
+          url,
+          `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">${url}</a>`
+        );
+      });
+      return [formattedSource];
+    }
+    return [sources];
+  }
+};
+
+const StudyPage = () => {
   const { deckId } = useParams();
-  const navigate = useNavigate();
   const { session } = useAuth();
-  const [deck, setDeck] = useState(null);
+  const navigate = useNavigate();
+
+  const [attempt, setAttempt] = useState(null);
   const [cards, setCards] = useState([]);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
-  const [currentAttempt, setCurrentAttempt] = useState(null);
-  const [answeredCards, setAnsweredCards] = useState(new Map());
-  const [isAnswerVisible, setIsAnswerVisible] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [deck, setDeck] = useState(null);
+  const [userChoice, setUserChoice] = useState(null);
+  const [isCorrect, setIsCorrect] = useState(false);
+  const [showTheory, setShowTheory] = useState(false);
+  const [showSources, setShowSources] = useState(false);
+  const [answeredCards, setAnsweredCards] = useState(new Set());
 
-  const isFetching = useRef(false);
+  // Carregar tentativa existente ou criar nova
+  useEffect(() => {
+    if (!deckId || !session?.user?.id) {
+      setError("Deck não selecionado ou usuário não autenticado.");
+      setIsLoading(false);
+      return;
+    }
 
-  const fetchStudySession = useCallback(async () => {
-    if (!session || !deckId || isFetching.current) return;
-    isFetching.current = true;
-    setLoading(true);
+    loadStudySession();
+  }, [deckId, session]);
 
+  const loadStudySession = async () => {
     try {
-      const { data: deckData, error: deckError } = await supabase
-        .from("decks")
-        .select("name")
-        .eq("id", deckId)
-        .single();
-      if (deckError) throw deckError;
+      setIsLoading(true);
+      setError(null);
+
+      // Buscar informações do deck
+      const deckData = await deckService.getDeck(deckId);
       setDeck(deckData);
 
-      const { data: cardsData, error: cardsError } = await supabase
-        .from("cards")
-        .select("*")
-        .eq("deck_id", deckId)
-        .order("created_at", { ascending: true });
-      if (cardsError) throw cardsError;
-      setCards(cardsData);
+      // Buscar cartas do baralho
+      const deckCards = await deckService.getDeckCards(deckId);
 
-      const { data: incompleteAttempt, error: incompleteError } = await supabase
-        .from("attempts")
-        .select("*")
-        .eq("deck_id", deckId)
-        .eq("user_id", session.user.id)
-        .is("completed_at", null)
-        .order("attempt_number", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (incompleteError && incompleteError.code !== "PGRST116")
-        throw incompleteError;
-
-      if (incompleteAttempt) {
-        setCurrentAttempt(incompleteAttempt);
-        const lastCardIndex = cardsData.findIndex(
-          (c) => c.id === incompleteAttempt.last_studied_card_id
-        );
-        const startIndex = lastCardIndex >= 0 ? lastCardIndex : 0;
-        setCurrentCardIndex(startIndex);
-      } else {
-        const { data: lastAttempt, error: lastAttemptError } = await supabase
-          .from("attempts")
-          .select("attempt_number")
-          .eq("deck_id", deckId)
-          .eq("user_id", session.user.id)
-          .order("attempt_number", { ascending: false })
-          .limit(1)
-          .single();
-
-        if (lastAttemptError && lastAttemptError.code !== "PGRST116")
-          throw lastAttemptError;
-
-        const newAttemptNumber = (lastAttempt?.attempt_number || 0) + 1;
-
-        const { data: newAttempt, error: newAttemptError } = await supabase
-          .from("attempts")
-          .insert({
-            deck_id: deckId,
-            user_id: session.user.id,
-            attempt_number: newAttemptNumber,
-          })
-          .select()
-          .single();
-        if (newAttemptError) throw newAttemptError;
-
-        setCurrentAttempt(newAttempt);
-        setCurrentCardIndex(0);
+      if (deckCards.length === 0) {
+        throw new Error("Nenhuma carta encontrada neste baralho");
       }
-    } catch (error) {
-      toast.error("Erro ao carregar sessão de estudo: " + error.message);
-      navigate(`/deck/${deckId}`);
-    } finally {
-      setLoading(false);
-      isFetching.current = false;
-    }
-  }, [deckId, session, navigate]);
 
-  useEffect(() => {
-    fetchStudySession();
-  }, [fetchStudySession]);
-
-  useEffect(() => {
-    const saveProgress = () => {
-      if (
-        currentAttempt &&
-        cards.length > 0 &&
-        currentCardIndex < cards.length
-      ) {
-        const lastStudiedCardId = cards[currentCardIndex]?.id;
-        if (lastStudiedCardId && !currentAttempt.completed_at) {
-          supabase
-            .from("attempts")
-            .update({ last_studied_card_id: lastStudiedCardId })
-            .eq("id", currentAttempt.id)
-            .then(({ error }) => {
-              if (error) {
-                console.error(
-                  "Falha ao salvar o progresso na saída:",
-                  error.message
-                );
-              }
-            });
-        }
-      }
-    };
-
-    window.addEventListener("beforeunload", saveProgress);
-    return () => {
-      window.removeEventListener("beforeunload", saveProgress);
-      saveProgress();
-    };
-  }, [currentAttempt, currentCardIndex, cards]);
-
-  const handleNavigation = (direction) => {
-    setIsAnswerVisible(false);
-    setCurrentCardIndex((prev) => {
-      const newIndex = prev + direction;
-      if (newIndex >= 0 && newIndex < cards.length) {
-        return newIndex;
-      }
-      return prev;
-    });
-  };
-
-  const handleAnswer = async (userChoseCorrect) => {
-    const card = cards[currentCardIndex];
-    if (!card || answeredCards.has(card.id) || !currentAttempt) {
-      setIsAnswerVisible(true);
-      return;
-    }
-
-    // Correctly determine if the answer was right
-    const isCorrectAnswerInCard = card.back_content
-      .toLowerCase()
-      .startsWith("certo.");
-    const wasCorrect = userChoseCorrect === isCorrectAnswerInCard;
-
-    const newAnsweredCards = new Map(answeredCards);
-    newAnsweredCards.set(card.id, wasCorrect);
-    setAnsweredCards(newAnsweredCards);
-
-    const { error: logError } = await supabase.from("study_log").insert({
-      card_id: card.id,
-      attempt_id: currentAttempt.id,
-      user_id: session.user.id,
-      was_correct: wasCorrect,
-    });
-
-    if (logError) {
-      toast.error("Erro ao registrar resposta no log.");
-      return;
-    }
-
-    const updates = {
-      correct_count: currentAttempt.correct_count + (wasCorrect ? 1 : 0),
-      incorrect_count: currentAttempt.incorrect_count + (wasCorrect ? 0 : 1),
-    };
-
-    const { data, error: attemptError } = await supabase
-      .from("attempts")
-      .update(updates)
-      .eq("id", currentAttempt.id)
-      .select()
-      .single();
-
-    if (attemptError) {
-      toast.error("Erro ao atualizar o resumo da tentativa.");
-    } else {
-      setCurrentAttempt(data);
-    }
-    setIsAnswerVisible(true);
-  };
-
-  const handleContinue = async () => {
-    const totalAnswered =
-      (currentAttempt?.correct_count || 0) +
-      (currentAttempt?.incorrect_count || 0);
-
-    if (totalAnswered === cards.length) {
-      const { error } = await supabase
-        .from("attempts")
-        .update({ completed_at: new Date().toISOString() })
-        .eq("id", currentAttempt.id);
-
-      if (error) {
-        toast.error("Erro ao finalizar a tentativa.");
-      } else {
-        toast.success("Parabéns! Você concluiu este baralho!");
-        navigate(`/deck/${deckId}`);
-      }
-      return;
-    }
-
-    const nextUnansweredIndex = cards.findIndex(
-      (card, index) => index > currentCardIndex && !answeredCards.has(card.id)
-    );
-
-    if (nextUnansweredIndex !== -1) {
-      setIsAnswerVisible(false);
-      setCurrentCardIndex(nextUnansweredIndex);
-    } else {
-      const firstUnanswered = cards.findIndex(
-        (card) => !answeredCards.has(card.id)
+      // Buscar tentativa ativa
+      const activeAttempt = await attemptService.getActiveAttempt(
+        deckId,
+        session.user.id
       );
-      if (firstUnanswered !== -1) {
-        setIsAnswerVisible(false);
-        setCurrentCardIndex(firstUnanswered);
+
+      if (activeAttempt && !activeAttempt.completed) {
+        await continueAttempt(activeAttempt, deckCards);
       } else {
-        toast.success("Todos os cartões foram respondidos!");
-        navigate(`/deck/${deckId}`);
+        await createNewAttempt(deckCards);
       }
+    } catch (err) {
+      console.error("Erro detalhado:", err);
+      setError(`Erro ao carregar sessão: ${err.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  if (loading || !currentAttempt) {
+  const continueAttempt = async (existingAttempt, deckCards) => {
+    setAttempt(existingAttempt);
+
+    // Criar mapa de cartas para acesso rápido
+    const cardMap = new Map(deckCards.map((card) => [card.id, card]));
+
+    // Recriar a ordem das cartas baseado no card_order salvo
+    const remainingCards = existingAttempt.card_order
+      .map((cardId) => cardMap.get(cardId))
+      .filter(
+        (card) => card && !existingAttempt.studied_cards?.includes(card.id)
+      );
+
+    setCards(remainingCards);
+    setCurrentCardIndex(0);
+    setShowAnswer(false);
+    setUserChoice(null);
+    setShowTheory(false);
+    setShowSources(false);
+
+    // Inicializar answeredCards com as cartas já respondidas
+    const answered = new Set(existingAttempt.studied_cards || []);
+    setAnsweredCards(answered);
+  };
+
+  const createNewAttempt = async (deckCards) => {
+    // Embaralhar as cartas
+    const shuffledCards = shuffleDeck([...deckCards]);
+    const cardOrder = shuffledCards.map((card) => card.id);
+
+    // Calcular número da tentativa
+    const userAttempts = await attemptService.getUserAttempts(
+      session.user.id,
+      deckId
+    );
+    const attemptNumber = userAttempts.length + 1;
+
+    // Criar nova tentativa
+    const newAttempt = await attemptService.createAttempt({
+      deck_id: deckId,
+      user_id: session.user.id,
+      attempt_number: attemptNumber,
+      card_order: cardOrder,
+      studied_cards: [],
+      correct_count: 0,
+      incorrect_count: 0,
+      completed: false,
+      created_at: new Date().toISOString(),
+    });
+
+    setAttempt(newAttempt);
+    setCards(shuffledCards);
+    setCurrentCardIndex(0);
+    setShowAnswer(false);
+    setUserChoice(null);
+    setShowTheory(false);
+    setShowSources(false);
+    setAnsweredCards(new Set());
+  };
+
+  const handleUserChoice = (choice) => {
+    if (!cards.length) return;
+
+    const currentCard = cards[currentCardIndex];
+
+    // Verificar se a carta já foi respondida
+    if (answeredCards.has(currentCard.id)) {
+      return; // Não permite responder novamente
+    }
+
+    const answerStartsWithCorrect = currentCard.back_content
+      .toLowerCase()
+      .startsWith("certo");
+    const userIsCorrect =
+      (choice === "certo" && answerStartsWithCorrect) ||
+      (choice === "errado" && !answerStartsWithCorrect);
+
+    setUserChoice(choice);
+    setIsCorrect(userIsCorrect);
+    setShowAnswer(true);
+  };
+
+  const markCardAsStudiedAndContinue = async () => {
+    if (!attempt || cards.length === 0) return;
+
+    const currentCard = cards[currentCardIndex];
+
+    // Verificar se a carta já foi respondida
+    if (answeredCards.has(currentCard.id)) {
+      // Só avança sem salvar novamente
+      goToNextCard();
+      return;
+    }
+
+    const updatedStudiedCards = [
+      ...(attempt.studied_cards || []),
+      currentCard.id,
+    ];
+
+    try {
+      // Atualizar contadores
+      const updatedCorrectCount = isCorrect
+        ? attempt.correct_count + 1
+        : attempt.correct_count;
+      const updatedIncorrectCount = !isCorrect
+        ? attempt.incorrect_count + 1
+        : attempt.incorrect_count;
+
+      // Atualizar tentativa no banco
+      const updatedAttempt = await attemptService.updateAttempt(attempt.id, {
+        studied_cards: updatedStudiedCards,
+        correct_count: updatedCorrectCount,
+        incorrect_count: updatedIncorrectCount,
+        last_studied_card_id: currentCard.id,
+      });
+
+      setAttempt(updatedAttempt);
+
+      // Marcar como respondida
+      setAnsweredCards((prev) => new Set([...prev, currentCard.id]));
+
+      // Verificar se todas as cartas foram estudadas
+      if (updatedStudiedCards.length === attempt.card_order.length) {
+        await completeStudySession(updatedAttempt);
+      } else {
+        goToNextCard();
+      }
+    } catch (err) {
+      setError("Erro ao salvar progresso");
+      console.error("Error marking card as studied:", err);
+    }
+  };
+
+  const completeStudySession = async (attemptData) => {
+    try {
+      const completedAttempt = await attemptService.completeAttempt(
+        attemptData.id
+      );
+      setAttempt(completedAttempt);
+      setCards([]);
+    } catch (err) {
+      setError("Erro ao finalizar sessão");
+      console.error("Error completing study session:", err);
+    }
+  };
+
+  const restartSession = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Embaralhar as cartas novamente na mesma tentativa
+      const deckCards = await deckService.getDeckCards(deckId);
+      const shuffledCards = shuffleDeck([...deckCards]);
+      const cardOrder = shuffledCards.map((card) => card.id);
+
+      // Atualizar a tentativa atual com nova ordem e resetar contadores
+      const updatedAttempt = await attemptService.updateAttempt(attempt.id, {
+        card_order: cardOrder,
+        studied_cards: [],
+        correct_count: 0,
+        incorrect_count: 0,
+        completed: false,
+      });
+
+      setAttempt(updatedAttempt);
+      setCards(shuffledCards);
+      setCurrentCardIndex(0);
+      setShowAnswer(false);
+      setUserChoice(null);
+      setShowTheory(false);
+      setShowSources(false);
+      setAnsweredCards(new Set());
+    } catch (err) {
+      setError("Erro ao reiniciar sessão");
+      console.error("Error restarting session:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const pauseSession = () => {
+    navigate(`/deck/${deckId}`);
+  };
+
+  const goToNextCard = () => {
+    if (currentCardIndex < cards.length - 1) {
+      setCurrentCardIndex((prev) => prev + 1);
+      setShowAnswer(false);
+      setUserChoice(null);
+      setShowTheory(false);
+      setShowSources(false);
+    }
+  };
+
+  const goToPrevCard = () => {
+    if (currentCardIndex > 0) {
+      setCurrentCardIndex((prev) => prev - 1);
+      setShowAnswer(false);
+      setUserChoice(null);
+      setShowTheory(false);
+      setShowSources(false);
+    }
+  };
+
+  // Verificar se a carta atual já foi respondida
+  const isCardAnswered = () => {
+    if (!cards.length) return false;
+    const currentCard = cards[currentCardIndex];
+    return answeredCards.has(currentCard.id);
+  };
+
+  // Renderizações de estado
+  if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
-        Carregando...
+      <div className="p-8 text-center dark:text-white">
+        Carregando sessão de estudo...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 text-center dark:text-white">
+        <div className="text-red-500 mb-4">{error}</div>
+        <div className="flex gap-4 justify-center">
+          <button
+            onClick={loadStudySession}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition"
+          >
+            Tentar Novamente
+          </button>
+          <button
+            onClick={() => navigate(`/deck/${deckId}`)}
+            className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition"
+          >
+            Voltar ao Baralho
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (attempt?.completed) {
+    const totalQuestions = attempt.correct_count + attempt.incorrect_count;
+    const accuracy =
+      totalQuestions > 0
+        ? Math.round((attempt.correct_count / totalQuestions) * 100)
+        : 0;
+
+    return (
+      <div className="min-h-screen p-8 text-center dark:text-white">
+        <h2 className="text-3xl font-bold mb-6">
+          🎉 Parabéns! Sessão Concluída!
+        </h2>
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow max-w-md mx-auto mb-6">
+          <p className="font-semibold text-lg mb-4">
+            Tentativa #{attempt.attempt_number}
+          </p>
+          <div className="space-y-2 text-left">
+            <p>✅ Certas: {attempt.correct_count}</p>
+            <p>❌ Erradas: {attempt.incorrect_count}</p>
+            <p>📊 Total: {totalQuestions}</p>
+            <p>🎯 Precisão: {accuracy}%</p>
+            <p>
+              Concluído em:{" "}
+              {new Date(attempt.completed_at).toLocaleDateString("pt-BR")}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-4 justify-center">
+          <button
+            onClick={restartSession}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition"
+          >
+            Iniciar Nova Sessão
+          </button>
+          <button
+            onClick={() => navigate(`/deck/${deckId}`)}
+            className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition"
+          >
+            Voltar ao Baralho
+          </button>
+        </div>
       </div>
     );
   }
 
   if (cards.length === 0) {
     return (
-      <div className="flex flex-col justify-center items-center h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-4">
-        <h2 className="text-2xl font-bold mb-4">Baralho Vazio</h2>
-        <p>Este baralho ainda não possui cartões para estudar.</p>
-        <Link
-          to={`/deck/${deckId}`}
-          className="mt-4 text-blue-500 dark:text-blue-400 hover:underline"
+      <div className="p-8 text-center dark:text-white">
+        <h2 className="text-2xl font-bold mb-4">Sessão de Estudo</h2>
+        <p className="mb-6">Nenhuma carta para estudar no momento.</p>
+        <button
+          onClick={restartSession}
+          className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition"
         >
-          &larr; Voltar para o baralho
-        </Link>
+          Iniciar Nova Sessão de Estudo
+        </button>
       </div>
     );
   }
 
   const currentCard = cards[currentCardIndex];
+  const totalCards = attempt?.card_order?.length || 0;
+  const studiedCount = attempt?.studied_cards?.length || 0;
+  const progress = totalCards > 0 ? (studiedCount / totalCards) * 100 : 0;
+  const isAnswered = isCardAnswered();
+
+  // Formatar fontes com links
+  const formattedSources = currentCard.source_references
+    ? formatSourcesWithLinks(currentCard.source_references)
+    : [];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white flex flex-col items-center p-4 sm:p-8 pb-32">
-      <div className="w-full max-w-2xl">
-        <div className="w-full mb-4">
-          <Link
-            to={`/deck/${deckId}`}
-            className="text-sm text-blue-500 dark:text-blue-400 hover:underline"
-          >
-            &larr; Sair da Sessão
-          </Link>
-        </div>
-
-        <div className="flex justify-between items-center w-full mb-6 text-sm sm:text-base">
-          <span className="font-semibold">
-            Tentativa: {String(currentAttempt.attempt_number).padStart(2, "0")}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleNavigation(-1)}
-              disabled={currentCardIndex === 0}
-              className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-md font-semibold disabled:opacity-50"
-            >
-              Anterior
-            </button>
-            <span className="font-semibold">
-              {currentCardIndex + 1} / {cards.length}
-            </span>
-            <button
-              onClick={() => handleNavigation(1)}
-              disabled={currentCardIndex === cards.length - 1}
-              className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-md font-semibold disabled:opacity-50"
-            >
-              Próximo
-            </button>
-          </div>
-          <span className="font-semibold">
-            Progresso:{" "}
-            <span className="text-green-500">
-              {currentAttempt.correct_count}
-            </span>{" "}
-            /{" "}
-            <span className="text-red-500">
-              {currentAttempt.incorrect_count}
-            </span>{" "}
-            / {cards.length}
-          </span>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 space-y-4 w-full mb-4">
-          <h2 className="text-lg font-semibold mb-2 text-center">
-            {deck?.name}
-          </h2>
-
-          <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none text-center py-6 min-h-[100px] flex items-center justify-center">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {currentCard.front_content}
-            </ReactMarkdown>
-          </div>
-
-          {isAnswerVisible && (
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-              <p
-                className={`text-center font-bold text-lg mb-4 ${
-                  answeredCards.get(currentCard.id)
-                    ? "text-green-500"
-                    : "text-red-500"
-                }`}
-              >
-                {answeredCards.get(currentCard.id)
-                  ? "Você Acertou!"
-                  : "Você Errou!"}
-              </p>
-              <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none mt-2">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {currentCard.back_content}
-                </ReactMarkdown>
+    <div className="min-h-screen flex flex-col">
+      {/* Conteúdo Principal - Rola por trás dos botões fixos */}
+      <div className="flex-1 p-4 pb-32">
+        {/* Header com Barra de Progresso e Navegação Integrada */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow mb-6">
+          <div className="flex flex-col gap-4">
+            {/* Linha 1: Título, Estatísticas e Navegação */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h1 className="text-2xl font-bold dark:text-white">
+                  Sessão de Estudo - {deck?.name}
+                </h1>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Tentativa #{attempt?.attempt_number || 1}
+                </p>
               </div>
-              <div className="mt-4 space-y-2">
-                {currentCard.theory_notes && (
-                  <details className="p-3 rounded-lg bg-gray-100 dark:bg-gray-700/50">
-                    <summary className="font-semibold cursor-pointer">
-                      Teoria
-                    </summary>
-                    <div className="mt-2 text-sm prose prose-sm dark:prose-invert max-w-none">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {currentCard.theory_notes}
-                      </ReactMarkdown>
-                    </div>
-                  </details>
-                )}
-                {currentCard.source_references &&
-                  currentCard.source_references.length > 0 && (
-                    <details className="p-3 rounded-lg bg-gray-100 dark:bg-gray-700/50">
-                      <summary className="font-semibold cursor-pointer">
-                        Fontes
-                      </summary>
-                      <ul className="mt-2 list-disc list-inside text-sm">
-                        {currentCard.source_references.map((source, index) => (
-                          <li key={index}>{source}</li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
+
+              <div className="flex items-center gap-4">
+                <span className="bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-md font-semibold dark:text-white">
+                  <span className="text-green-600 dark:text-green-400">
+                    {attempt?.correct_count || 0}
+                  </span>
+                  <span>/</span>
+                  <span className="text-red-600 dark:text-red-400">
+                    {attempt?.incorrect_count || 0}
+                  </span>
+                  <span>/</span>
+                  <span>{totalCards}</span>
+                </span>
+
+                {/* Navegação e Ações */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={goToPrevCard}
+                    disabled={currentCardIndex === 0}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-2 px-3 rounded-md transition text-sm flex items-center gap-1"
+                  >
+                    ◀️ <span className="hidden sm:inline">Anterior</span>
+                  </button>
+
+                  <span className="bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-md font-bold dark:text-white text-sm">
+                    {currentCardIndex + 1} / {cards.length}
+                  </span>
+
+                  <button
+                    onClick={goToNextCard}
+                    disabled={currentCardIndex === cards.length - 1}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-2 px-3 rounded-md transition text-sm flex items-center gap-1"
+                  >
+                    <span className="hidden sm:inline">Próxima</span> ▶️
+                  </button>
+
+                  <button
+                    onClick={restartSession}
+                    className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-3 rounded-md transition text-sm flex items-center gap-1"
+                  >
+                    🔄 <span className="hidden sm:inline">Reiniciar</span>
+                  </button>
+
+                  <button
+                    onClick={pauseSession}
+                    className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition text-sm flex items-center gap-1"
+                  >
+                    ⏸️ <span className="hidden sm:inline">Pausar</span>
+                  </button>
+                </div>
               </div>
             </div>
-          )}
+
+            {/* Linha 2: Barra de Progresso */}
+            <div className="space-y-2">
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                <div
+                  className="bg-green-600 h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+              <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                <span>
+                  {studiedCount} de {totalCards} cartas estudadas (
+                  {Math.round(progress)}%)
+                </span>
+                <span className="font-semibold">
+                  Restantes: {cards.length - currentCardIndex}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Flashcard */}
+        <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow">
+          <div className="text-center">
+            {/* Pergunta */}
+            <div className="prose prose-lg dark:prose-invert max-w-none mb-8">
+              <h3 className="text-xl font-semibold mb-6 dark:text-white">
+                {currentCard.front_content}
+              </h3>
+
+              {/* Mensagem se já foi respondida */}
+              {isAnswered && !showAnswer && (
+                <div className="bg-yellow-100 dark:bg-yellow-900/20 p-4 rounded-lg">
+                  <p className="text-yellow-700 dark:text-yellow-300 font-semibold">
+                    Esta pergunta já foi respondida. Use "Mostrar Resposta" para
+                    revisar.
+                  </p>
+                </div>
+              )}
+
+              {/* Feedback e Resposta */}
+              {showAnswer && (
+                <div className="space-y-6">
+                  {/* Feedback do Resultado */}
+                  <div
+                    className={`p-4 rounded-lg ${
+                      isCorrect
+                        ? "bg-green-100 dark:bg-green-900/20 border border-green-300 dark:border-green-700"
+                        : "bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700"
+                    }`}
+                  >
+                    <p
+                      className={`text-lg font-semibold ${
+                        isCorrect
+                          ? "text-green-700 dark:text-green-300"
+                          : "text-red-700 dark:text-red-300"
+                      }`}
+                    >
+                      {isCorrect ? "✅ Você acertou!" : "❌ Você errou!"}
+                    </p>
+                  </div>
+
+                  {/* Resposta */}
+                  <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg">
+                    <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4">
+                      Resposta:
+                    </h4>
+                    <p className="text-gray-700 dark:text-gray-300 text-lg mb-6">
+                      {currentCard.back_content}
+                    </p>
+
+                    {/* Teoria (Opcional) - Escondido por padrão */}
+                    {currentCard.theory_notes && (
+                      <div className="mb-4">
+                        <button
+                          onClick={() => setShowTheory(!showTheory)}
+                          className="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-semibold"
+                        >
+                          <span>📚 Teoria</span>
+                          <span>{showTheory ? "▲" : "▼"}</span>
+                        </button>
+                        {showTheory && (
+                          <div className="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 p-4 mt-2 text-left rounded">
+                            <p className="text-blue-700 dark:text-blue-300 text-sm">
+                              {currentCard.theory_notes}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Fontes (Opcional) - Escondido por padrão */}
+                    {formattedSources.length > 0 && (
+                      <div>
+                        <button
+                          onClick={() => setShowSources(!showSources)}
+                          className="flex items-center gap-2 text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-300 font-semibold"
+                        >
+                          <span>📖 Fontes</span>
+                          <span>{showSources ? "▲" : "▼"}</span>
+                        </button>
+                        {showSources && (
+                          <div className="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-500 p-4 mt-2 text-left rounded">
+                            <div className="space-y-2">
+                              {formattedSources.map((source, index) => (
+                                <p
+                                  key={index}
+                                  className="text-yellow-700 dark:text-yellow-300 text-sm"
+                                  dangerouslySetInnerHTML={{ __html: source }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      <footer className="fixed bottom-0 left-0 w-full p-4 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-t border-gray-200 dark:border-gray-700">
-        <div className="max-w-2xl mx-auto">
-          {isAnswerVisible ? (
-            <button
-              onClick={handleContinue}
-              className="w-full p-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-            >
-              Continuar
-            </button>
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                onClick={() => handleAnswer(true)}
-                className="p-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
-              >
-                Certo
-              </button>
-              <button
-                onClick={() => handleAnswer(false)}
-                className="p-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors"
-              >
-                Errado
-              </button>
+      {/* Área Fixa de Botões - Fica sempre visível na parte inferior */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4 shadow-lg">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex justify-center">
+            {/* Botões de Resposta - Grandes e com destaque */}
+            <div className="flex gap-6 items-center">
+              {/* Botões de Escolha - Só mostra se não estiver mostrando resposta e se não foi respondida */}
+              {!showAnswer && !isAnswered && (
+                <>
+                  <button
+                    onClick={() => handleUserChoice("certo")}
+                    className="bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-12 rounded-md transition text-lg min-w-[160px] shadow-lg"
+                  >
+                    ✅ Certo
+                  </button>
+
+                  <button
+                    onClick={() => handleUserChoice("errado")}
+                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-12 rounded-md transition text-lg min-w-[160px] shadow-lg"
+                  >
+                    ❌ Errado
+                  </button>
+                </>
+              )}
+
+              {/* Botão Mostrar Resposta - Quando a carta já foi respondida mas a resposta não está visível */}
+              {!showAnswer && isAnswered && (
+                <button
+                  onClick={() => setShowAnswer(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-12 rounded-md transition text-lg min-w-[160px] shadow-lg"
+                >
+                  👆 Mostrar Resposta
+                </button>
+              )}
+
+              {/* Botão Continuar - Mostra quando a resposta está visível e a carta não foi respondida */}
+              {showAnswer && !isAnswered && (
+                <button
+                  onClick={markCardAsStudiedAndContinue}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-12 rounded-md transition text-lg min-w-[160px] shadow-lg"
+                >
+                  Continuar ▶️
+                </button>
+              )}
+
+              {/* Botão para apenas avançar se já foi respondida */}
+              {showAnswer && isAnswered && (
+                <button
+                  onClick={goToNextCard}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-12 rounded-md transition text-lg min-w-[160px] shadow-lg"
+                >
+                  Próxima ▶️
+                </button>
+              )}
             </div>
-          )}
+          </div>
         </div>
-      </footer>
+      </div>
     </div>
   );
-}
+};
 
 export default StudyPage;
