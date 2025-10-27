@@ -1,5 +1,5 @@
 // src/services/deckService.js
-import { supabase } from "./supabaseClient";
+import { supabase } from "@/supabaseClient";
 
 const deckService = {
   async getDeckCards(deckId) {

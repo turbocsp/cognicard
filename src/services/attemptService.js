@@ -1,5 +1,5 @@
 // src/services/attemptService.js
-import { supabase } from "./supabaseClient";
+import { supabase } from "@/supabaseClient";
 
 const attemptService = {
   async getActiveAttempt(deckId, userId) {
