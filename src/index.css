@@ -8,3 +8,25 @@
 .prose :where(code):not(:where([class~="not-prose"] *))::after {
   content: "";
 }
+
+/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-slate-100;
+    /* Define a cor de fundo e texto padrão para claro e escuro */
+  }
+  /* Garante que links também tenham uma cor padrão razoável */
+  a {
+    @apply text-blue-600 dark:text-blue-400;
+  }
+}
+
+/* Remove as aspas geradas pelo plugin de tipografia em volta do código inline */
+.prose :where(code):not(:where([class~="not-prose"] *))::before,
+.prose :where(code):not(:where([class~="not-prose"] *))::after {
+  content: "";
+}

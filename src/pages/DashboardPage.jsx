@@ -415,10 +415,14 @@ export function DashboardPage() {
       );
     }
 
+    // --- CORREÇÃO DE ALINHAMENTO APLICADA ABAIXO ---
     return (
       <div
         className="flex items-center p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700/50"
-        style={{ paddingLeft: `${depth * 20 + 4 + 16 + 8}px` }}
+        // Aplica indentação base apenas se depth > 0
+        style={{
+          paddingLeft: depth > 0 ? `${depth * 20 + 4 + 16 + 8}px` : "4px",
+        }}
         onContextMenu={handleContextMenu}
         onTouchStart={(e) => handleTouchStart(e, node)}
         onTouchEnd={handleTouchEnd}
@@ -440,7 +444,7 @@ export function DashboardPage() {
         )}
       </div>
     );
-  };
+  }; // Fim do FileSystemNode
 
   return (
     <div className="min-h-screen pb-8" onClick={() => setContextMenu(null)}>
@@ -554,18 +558,21 @@ export function DashboardPage() {
                   {renderFolderOptions(treeData)}
                 </select>
               </div>
+              {/* --- CORREÇÃO DAS CORES DOS BOTÕES APLICADA ABAIXO --- */}
               <div className="flex space-x-4 mt-6">
                 <button
                   onClick={(e) => handleCreate("deck", e)}
                   disabled={isSubmitting || !newItemName}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md disabled:opacity-50"
+                  // Cor base para modo claro, cor para modo escuro, e sua correção de opacidade para desabilitado
+                  className="flex-1 bg-blue-800 hover:bg-blue-900 dark:bg-blue-700 dark:hover:bg-blue-800 text-white font-bold py-2 px-4 rounded-md disabled:opacity-90 transition-colors"
                 >
                   Criar Baralho
                 </button>
                 <button
                   onClick={(e) => handleCreate("folder", e)}
                   disabled={isSubmitting || !newItemName}
-                  className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-md disabled:opacity-50"
+                  // Cor base para modo claro, cor para modo escuro, e sua correção de opacidade para desabilitado
+                  className="flex-1 bg-amber-500 hover:bg-amber-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md disabled:opacity-90 transition-colors"
                 >
                   Criar Pasta
                 </button>
@@ -611,8 +618,6 @@ export function DashboardPage() {
         allFolders={folders}
         folderToMove={folderToMove}
       />
-
-      {/* CORREÇÃO APLICADA AQUI */}
       <DailySummaryModal
         isOpen={!!selectedDate}
         onClose={() => setSelectedDate(null)}
