@@ -11,10 +11,6 @@ build/
 .cache/
 out/
 
-# Env
-.env
-.env.local
-.env.*.local
 
 # Logs
 npm-debug.log*
