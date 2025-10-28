@@ -1,0 +1,42 @@
+name: CI/CD - Cognicard
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Lint e Testes
+        run: |
+          npm run lint --if-present
+          npm run test --if-present
+
+      - name: Build do projeto
+        run: npm run build
+
+      - name: Deploy para Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ lDWTMMT8bM2VI5u8kN6Bliwz }}
+          vercel-org-id: ${{ XvNz2KlvrJ1zWZ76hxSeLHVg }}
+          vercel-project-id: ${{ prj_sbsYRzR4dK7Stzc95YDluPXEm80M }}
+          working-directory: .
+          prod: true
