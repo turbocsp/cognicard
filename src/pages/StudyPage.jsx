@@ -7,7 +7,7 @@ import deckService from "../services/deckService";
 import { supabase } from "@/supabaseClient";
 import { toast } from "react-hot-toast";
 
-// Função shuffleDeck
+// Função shuffleDeck (sem alterações)
 const shuffleDeck = (cards) => {
   const shuffled = [...cards];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -17,8 +17,9 @@ const shuffleDeck = (cards) => {
   return shuffled;
 };
 
-// Função formatSourcesWithLinks
+// Função formatSourcesWithLinks (sem alterações)
 const formatSourcesWithLinks = (sources) => {
+  // ... (código existente)
   if (!sources) return [];
 
   const formatSingleSource = (source) => {
@@ -50,7 +51,7 @@ const StudyPage = () => {
   const { session } = useAuth();
   const navigate = useNavigate();
 
-  // Estados - TODOS PRIMEIRO
+  // Estados (sem alterações)
   const [attempt, setAttempt] = useState(null);
   const [cardsInCurrentView, setCardsInCurrentView] = useState([]);
   const [allCardsMap, setAllCardsMap] = useState(new Map());
@@ -64,8 +65,9 @@ const StudyPage = () => {
   const [answeredCards, setAnsweredCards] = useState(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // TODOS OS HOOKS useMemo ANTES DOS RETURNS
+  // Hooks useMemo (sem alterações)
   const currentCard = useMemo(() => {
+    // ... (código existente)
     if (cardsInCurrentView && currentCardIndex < cardsInCurrentView.length) {
       return cardsInCurrentView[currentCardIndex];
     }
@@ -80,6 +82,7 @@ const StudyPage = () => {
       : 0;
 
   const currentCardOriginalIndex = useMemo(() => {
+    // ... (código existente)
     if (attempt?.card_order && currentCard) {
       return attempt.card_order.findIndex((id) => id === currentCard.id);
     }
@@ -94,12 +97,14 @@ const StudyPage = () => {
     : [];
 
   const isCardAnswered = () => {
+    // ... (código existente)
     if (!currentCard) return false;
     return answeredCards.has(currentCard.id);
   };
 
-  // useEffect ANTES DOS RETURNS
+  // useEffect (sem alterações)
   useEffect(() => {
+    // ... (código existente)
     if (!deckId || !session?.user?.id) {
       setError("Deck não selecionado ou usuário não autenticado.");
       setIsLoading(false);
@@ -108,6 +113,7 @@ const StudyPage = () => {
     loadStudySession();
   }, [deckId, session]);
 
+  // Funções loadStudySession, continueAttempt (sem alterações)
   const loadStudySession = async () => {
     try {
       setIsLoading(true);
@@ -186,6 +192,7 @@ const StudyPage = () => {
     setAnsweredCards(studiedSet);
   };
 
+  // Função createNewAttempt (sem alterações significativas, apenas formatação)
   const createNewAttempt = async (allDeckCards) => {
     const shuffledCards = shuffleDeck([...allDeckCards]);
     const cardOrder = shuffledCards.map((card) => card.id);
@@ -194,7 +201,11 @@ const StudyPage = () => {
       session.user.id,
       deckId
     );
-    const attemptNumber = userAttempts.length + 1;
+    // Incrementa o número da tentativa baseado nas existentes
+    const attemptNumber =
+      (userAttempts.length > 0
+        ? Math.max(...userAttempts.map((a) => a.attempt_number))
+        : 0) + 1;
 
     const newAttempt = await attemptService.createAttempt({
       deck_id: deckId,
@@ -217,6 +228,39 @@ const StudyPage = () => {
     setAnsweredCards(new Set());
   };
 
+  // <<< NOVA FUNÇÃO: startNewAttempt >>>
+  const startNewAttempt = async () => {
+    if (!session?.user?.id || !deckId || isProcessing) return;
+
+    try {
+      setIsProcessing(true);
+      setError(null);
+      setIsLoading(true); // Mostrar carregando enquanto cria a nova
+
+      // Buscar cartas do baralho novamente para garantir dados frescos
+      const deckCards = await deckService.getDeckCards(deckId);
+      if (deckCards.length === 0) {
+        throw new Error(
+          "Nenhuma carta encontrada neste baralho para iniciar uma nova tentativa."
+        );
+      }
+
+      // Chamar a função que cria uma NOVA tentativa no banco
+      await createNewAttempt(deckCards);
+
+      // Não precisamos navegar, pois os estados serão atualizados e a UI re-renderizará
+      toast.success("Nova tentativa iniciada!");
+    } catch (err) {
+      setError("Erro ao iniciar nova tentativa");
+      console.error("Error starting new attempt:", err);
+      toast.error("Não foi possível iniciar uma nova tentativa.");
+    } finally {
+      setIsProcessing(false);
+      setIsLoading(false); // Esconder carregando
+    }
+  };
+
+  // Funções addStudyLog, handleUserChoice, markCardAsStudiedAndContinue, completeStudySession (sem alterações)
   const addStudyLog = async (cardId, wasCorrect) => {
     if (!attempt || !session?.user?.id) return;
     try {
@@ -284,14 +328,16 @@ const StudyPage = () => {
         last_studied_card_id: currentCard.id,
       });
 
-      setAttempt(updatedAttempt);
+      setAttempt(updatedAttempt); // Atualiza o estado local com os dados retornados
 
+      // Verifica se todas as cartas da ORDEM da tentativa foram estudadas
       if (updatedStudiedCards.length === attempt.card_order.length) {
-        await completeStudySession(updatedAttempt);
+        await completeStudySession(updatedAttempt); // Passa o attempt ATUALIZADO
       } else {
         goToNextCard();
       }
     } catch (err) {
+      // Reverte a adição ao set local se a atualização falhar
       setAnsweredCards((prev) => {
         const newSet = new Set(prev);
         newSet.delete(currentCard.id);
@@ -306,18 +352,26 @@ const StudyPage = () => {
   };
 
   const completeStudySession = async (attemptData) => {
+    // Não precisa buscar de novo, usa o attemptData que já foi atualizado
+    if (!attemptData || attemptData.completed) return; // Já está completo? Não faz nada.
+
     try {
+      setIsProcessing(true); // Ativa processamento aqui
       const completedAttempt = await attemptService.completeAttempt(
         attemptData.id
       );
-      setAttempt(completedAttempt);
+      setAttempt(completedAttempt); // Atualiza o estado para refletir a conclusão
+      // A UI vai re-renderizar para a tela de "Parabéns" por causa da mudança no estado 'attempt.completed'
     } catch (err) {
       setError("Erro ao finalizar sessão");
       console.error("Error completing study session:", err);
       toast.error("Erro ao finalizar a sessão de estudo.");
+    } finally {
+      setIsProcessing(false); // Desativa processamento
     }
   };
 
+  // Função restartSession (AGORA NÃO É MAIS USADA NA TELA DE CONCLUSÃO)
   const restartSession = async () => {
     if (!attempt || isProcessing) return;
 
@@ -332,6 +386,7 @@ const StudyPage = () => {
           "Nenhuma carta encontrada neste baralho para reiniciar"
         );
       }
+      setAllCardsMap(new Map(deckCards.map((card) => [card.id, card]))); // Atualiza o mapa de cartas
 
       // Embaralhar as cartas
       const shuffledCards = shuffleDeck([...deckCards]);
@@ -339,21 +394,22 @@ const StudyPage = () => {
 
       // Atualizar a tentativa atual (não criar nova)
       const updatedAttempt = await attemptService.updateAttempt(attempt.id, {
-        card_order: cardOrder,
-        studied_cards: [],
-        correct_count: 0,
+        card_order: cardOrder, // Nova ordem embaralhada
+        studied_cards: [], // Zera estudados
+        correct_count: 0, // Zera contadores
         incorrect_count: 0,
-        completed: false,
-        last_studied_card_id: null,
+        completed: false, // Marca como não completa
+        completed_at: null, // Remove data de conclusão
+        last_studied_card_id: null, // Zera último estudado
       });
 
-      // Atualizar os estados locais
+      // Atualizar os estados locais para refletir o reinício
       setAttempt(updatedAttempt);
-      setCardsInCurrentView(shuffledCards);
+      setCardsInCurrentView(shuffledCards); // Usa as cartas recém-embaralhadas
       setCurrentCardIndex(0);
       setShowAnswer(false);
       setUserChoice(null);
-      setAnsweredCards(new Set());
+      setAnsweredCards(new Set()); // Limpa o set de respondidos
 
       toast.success("Tentativa reiniciada com sucesso!");
     } catch (err) {
@@ -365,6 +421,7 @@ const StudyPage = () => {
     }
   };
 
+  // Funções pauseSession, goToNextCard, goToPrevCard (sem alterações)
   const pauseSession = () => {
     navigate(`/deck/${deckId}`);
   };
@@ -395,8 +452,11 @@ const StudyPage = () => {
     }
   };
 
-  // AGORA OS RETURNS CONDICIONAIS
+  // RETURNS CONDICIONAIS
+
+  // Loading e Error (sem alterações)
   if (isLoading) {
+    // ... (código existente)
     return (
       <div className="flex justify-center items-center min-h-screen dark:text-white">
         Carregando sessão de estudo...
@@ -405,12 +465,13 @@ const StudyPage = () => {
   }
 
   if (error) {
+    // ... (código existente)
     return (
       <div className="p-8 text-center dark:text-white">
         <div className="text-red-500 mb-4">{error}</div>
         <div className="flex gap-4 justify-center">
           <button
-            onClick={loadStudySession}
+            onClick={loadStudySession} // Tenta recarregar a sessão
             className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition"
           >
             Tentar Novamente
@@ -426,6 +487,7 @@ const StudyPage = () => {
     );
   }
 
+  // Tela de Conclusão (ATUALIZADA)
   if (attempt?.completed) {
     const totalQuestions = attempt.correct_count + attempt.incorrect_count;
     const accuracy =
@@ -448,16 +510,22 @@ const StudyPage = () => {
             <p>🎯 Precisão: {accuracy}%</p>
             <p>
               Concluído em:{" "}
-              {new Date(attempt.completed_at).toLocaleDateString("pt-BR")}
+              {new Date(attempt.completed_at).toLocaleDateString("pt-BR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
             </p>
           </div>
         </div>
         <div className="flex gap-4 justify-center">
+          {/* <<< BOTÃO ATUALIZADO >>> */}
           <button
-            onClick={restartSession}
-            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition"
+            onClick={startNewAttempt} // Chama a nova função
+            disabled={isProcessing} // Desabilita enquanto processa
+            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition disabled:opacity-50"
           >
-            Reiniciar Tentativa
+            {isProcessing ? "Iniciando..." : "Nova Tentativa"}{" "}
+            {/* Texto atualizado */}
           </button>
           <button
             onClick={() => navigate(`/deck/${deckId}`)}
@@ -470,9 +538,9 @@ const StudyPage = () => {
     );
   }
 
+  // Tela "Fim da Tentativa" (sem alterações significativas, talvez ajustar botão de finalizar se necessário)
   if (cardsInCurrentView.length === 0 && !isLoading && !attempt?.completed) {
-    // Se não há mais cartas para mostrar NESTA TENTATIVA, mas a tentativa ainda não foi marcada como completa
-    // (Isso pode acontecer se o usuário pausar e voltar depois de responder tudo, mas antes do completeStudySession ser chamado)
+    // ... (código existente)
     return (
       <div className="min-h-screen flex flex-col justify-center items-center p-4 text-center dark:text-white">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow max-w-md w-full mb-6">
@@ -491,12 +559,13 @@ const StudyPage = () => {
           </button>
         </div>
         <div className="flex gap-4 justify-center">
+          {/* Mantém o botão Reiniciar aqui, pois a tentativa NÃO está completa */}
           <button
             onClick={restartSession}
-            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition"
+            className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-md transition"
             disabled={isProcessing}
           >
-            Reiniciar Tentativa
+            Reiniciar Tentativa Atual
           </button>
           <button
             onClick={() => navigate(`/deck/${deckId}`)}
@@ -509,13 +578,14 @@ const StudyPage = () => {
     );
   }
 
-  // Se não carregou, erro, completo ou vazio, então temos um cartão para mostrar
+  // Renderização do Card Atual (sem alterações visuais, apenas lógicas anteriores)
   const isAnswered = isCardAnswered();
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white">
-      {/* Header Compactado */}
+      {/* Header Compactado (sem alterações visuais) */}
       <header className="w-full p-3 border-b border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10">
+        {/* ... (código do header existente com a correção de visibilidade móvel já aplicada) ... */}
         <div className="max-w-6xl mx-auto flex flex-wrap justify-between items-center gap-y-2 text-xs sm:text-sm">
           {/* Lado Esquerdo */}
           <div className="flex items-center gap-3">
@@ -526,7 +596,7 @@ const StudyPage = () => {
               {deck?.name || "Estudo"}
             </span>
             <span>Tentativa: {attempt?.attempt_number || 1}</span>
-            {/* <<< REMOVIDO hidden sm:inline >>> */}
+            {/* <<< SEM hidden sm:inline >>> */}
             <span>
               {attempt?.correct_count || 0} ✅ / {attempt?.incorrect_count || 0}{" "}
               ❌ / {totalCardsInDeckAttempt} 🃏
@@ -564,11 +634,12 @@ const StudyPage = () => {
               ></div>
             </div>
             <span>{Math.round(progressPercent)}%</span>
+            {/* O botão Reiniciar continua aqui para reiniciar a TENTATIVA ATUAL */}
             <button
               onClick={restartSession}
               disabled={isProcessing}
               className="px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs disabled:opacity-50"
-              title="Reiniciar Tentativa"
+              title="Reiniciar Tentativa Atual"
             >
               🔄
             </button>
@@ -583,10 +654,11 @@ const StudyPage = () => {
         </div>
       </header>
 
-      {/* Conteúdo Principal */}
+      {/* Conteúdo Principal (sem alterações visuais) */}
       <main className="flex-1 flex flex-col items-center justify-center p-4 pb-24">
+        {/* ... (código do card principal existente com a exibição do título já aplicada) ... */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-2xl text-center">
-          {/* <<< Título (Nome do Cartão ou Deck) ATUALIZADO >>> */}
+          {/* Título (Nome do Cartão ou Deck) */}
           <h2 className="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-300">
             {currentCard?.title || deck?.name || "Estudo"}
           </h2>
@@ -655,8 +727,9 @@ const StudyPage = () => {
         </div>
       </main>
 
-      {/* Footer Fixo com Botões */}
+      {/* Footer Fixo com Botões (sem alterações) */}
       <footer className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 p-4 shadow-up">
+        {/* ... (código dos botões Certo/Errado/Continuar/Mostrar Resposta) ... */}
         <div className="max-w-2xl mx-auto flex justify-center gap-4">
           {/* Botões de Escolha */}
           {!showAnswer && !isAnswered && (
