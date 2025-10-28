@@ -9,8 +9,5 @@
     { "src": "/.*", "dest": "/index.html" }
   ],
   "cleanUrls": true,
-  "trailingSlash": false,
-  "errorPages": {
-    "404": "/index.html"
-  }
+  "trailingSlash": false
 }
