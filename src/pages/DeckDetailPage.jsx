@@ -19,6 +19,7 @@ function DeckDetailPage() {
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const [newCard, setNewCard] = useState({
+    title: "", // <<< ADICIONADO
     front_content: "",
     back_content: "",
     theory_notes: "",
@@ -42,7 +43,7 @@ function DeckDetailPage() {
 
       const cardsPromise = supabase
         .from("cards")
-        .select("*")
+        .select("*") // <<< Já busca todas as colunas, incluindo 'title' se existir
         .eq("deck_id", deckId)
         .order("created_at");
 
@@ -97,6 +98,7 @@ function DeckDetailPage() {
     const { error } = await supabase.from("cards").insert({
       deck_id: deckId,
       user_id: session.user.id,
+      title: newCard.title.trim() || null, // <<< ADICIONADO (envia null se vazio)
       front_content: newCard.front_content,
       back_content: newCard.back_content,
       theory_notes: newCard.theory_notes || null,
@@ -115,6 +117,8 @@ function DeckDetailPage() {
     } else {
       toast.success("Cartão adicionado com sucesso!");
       setNewCard({
+        // <<< ATUALIZADO para limpar o título
+        title: "",
         front_content: "",
         back_content: "",
         theory_notes: "",
@@ -142,9 +146,11 @@ function DeckDetailPage() {
   };
 
   const handleSaveEdit = async (updatedCard) => {
+    // A função no CardEditModal já envia o title, apenas precisamos garantir que ele está sendo atualizado aqui
     const { error } = await supabase
       .from("cards")
       .update({
+        title: updatedCard.title, // <<< Garantir que o título está sendo enviado
         front_content: updatedCard.front_content,
         back_content: updatedCard.back_content,
         theory_notes: updatedCard.theory_notes,
@@ -210,6 +216,25 @@ function DeckDetailPage() {
               </button>
             </div>
             <form onSubmit={handleCreateCard} className="space-y-4">
+              {/* <<< NOVO CAMPO TÍTULO >>> */}
+              <div>
+                <label
+                  htmlFor="title"
+                  className="block text-sm font-medium mb-1"
+                >
+                  Título (Opcional)
+                </label>
+                <input
+                  type="text"
+                  name="title"
+                  id="title"
+                  value={newCard.title}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {/* <<< FIM DO NOVO CAMPO >>> */}
+
               <div>
                 <label
                   htmlFor="front_content"
@@ -313,12 +338,19 @@ function DeckDetailPage() {
                   key={card.id}
                   className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow relative group"
                 >
+                  {/* Mostra o título do cartão se existir */}
+                  {card.title && (
+                    <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2 truncate">
+                      {card.title}
+                    </h3>
+                  )}
                   <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => setCardToEdit(card)}
                       title="Editar"
                       className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full"
                     >
+                      {/* SVG Editar */}
                       <svg
                         className="w-5 h-5 text-gray-500"
                         fill="none"
@@ -338,6 +370,7 @@ function DeckDetailPage() {
                       title="Excluir"
                       className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full"
                     >
+                      {/* SVG Excluir */}
                       <svg
                         className="w-5 h-5 text-red-500"
                         fill="none"
@@ -353,7 +386,12 @@ function DeckDetailPage() {
                       </svg>
                     </button>
                   </div>
-                  <div className="prose prose-sm dark:prose-invert max-w-none pr-16">
+                  {/* Ajusta padding-top se o título existir para não sobrepor */}
+                  <div
+                    className={`prose prose-sm dark:prose-invert max-w-none pr-16 ${
+                      card.title ? "pt-1" : ""
+                    }`}
+                  >
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {card.front_content}
                     </ReactMarkdown>

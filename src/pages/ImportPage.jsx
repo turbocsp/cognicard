@@ -6,7 +6,9 @@ import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
 
 const TARGET_FIELDS = [
+  // <<< ATUALIZADO
   { value: "ignore", label: "Ignorar esta coluna" },
+  { value: "title", label: "Título do Cartão" },
   { value: "front_content", label: "Frente (Pergunta)" },
   { value: "back_content", label: "Verso (Resposta)" },
   { value: "theory_notes", label: "Teoria" },
@@ -76,7 +78,23 @@ function ImportPage() {
           setHeaders(results.meta.fields);
           const initialMappings = {};
           results.meta.fields.forEach((field) => {
-            initialMappings[field] = "ignore";
+            initialMappings[field] = "ignore"; // Default to ignore
+            // Basic heuristic for auto-mapping
+            const lowerField = field.toLowerCase();
+            if (
+              lowerField.includes("frente") ||
+              lowerField.includes("pergunta")
+            )
+              initialMappings[field] = "front_content";
+            if (lowerField.includes("verso") || lowerField.includes("resposta"))
+              initialMappings[field] = "back_content";
+            if (lowerField.includes("titulo") || lowerField.includes("título"))
+              initialMappings[field] = "title";
+            if (lowerField.includes("teoria"))
+              initialMappings[field] = "theory_notes";
+            if (lowerField.includes("fonte") || lowerField.includes("source"))
+              initialMappings[field] = "source_references";
+            if (lowerField.includes("tag")) initialMappings[field] = "tags";
           });
           setMappings(initialMappings);
           fullCsvData.current = results.data;
@@ -118,38 +136,53 @@ function ImportPage() {
           if (targetField !== "ignore") {
             const value = row[header];
             if (targetField === "tags" || targetField === "source_references") {
+              // Handle comma-separated values for tags and sources
               newCard[targetField] = value
                 ? value
                     .split(",")
                     .map((s) => s.trim())
                     .filter((s) => s)
                 : [];
+            } else if (targetField === "title") {
+              // Handle title, ensure it's null if empty/whitespace
+              newCard[targetField] =
+                value && value.trim() ? value.trim() : null;
             } else {
-              newCard[targetField] = value;
+              // Handle front_content, back_content, theory_notes
+              newCard[targetField] = value || null; // Use null if value is empty/undefined
             }
           }
         }
+        // Ensure essential fields are present
+        if (!newCard.front_content || !newCard.back_content) {
+          return null; // Skip card if front or back is missing
+        }
         return newCard;
       })
-      .filter((card) => card.front_content && card.back_content);
+      .filter((card) => card !== null); // Filter out invalid cards
 
     if (cardsToInsert.length === 0) {
       toast.error(
-        "Nenhum cartão válido para importar. Verifique o mapeamento e o conteúdo do arquivo."
+        "Nenhum cartão válido para importar. Verifique o mapeamento e se as colunas de Frente e Verso têm conteúdo."
       );
       setIsProcessing(false);
       return;
     }
 
-    const { error } = await supabase.from("cards").insert(cardsToInsert);
+    try {
+      const { error } = await supabase.from("cards").insert(cardsToInsert);
 
-    if (error) {
-      toast.error(`Ocorreu um erro ao salvar os cartões: ${error.message}`);
-    } else {
+      if (error) {
+        throw error;
+      }
+
       toast.success(`${cardsToInsert.length} cartões importados com sucesso!`);
       navigate(`/deck/${deckId}`);
+    } catch (error) {
+      toast.error(`Ocorreu um erro ao salvar os cartões: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
     }
-    setIsProcessing(false);
   };
 
   const usedFields = useMemo(
@@ -238,7 +271,10 @@ function ImportPage() {
               Passo 2: Mapeie as Colunas
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-              Associe cada coluna do seu arquivo a um campo do CogniCard.
+              Associe cada coluna do seu arquivo a um campo do CogniCard.{" "}
+              <strong className="text-red-500">
+                As colunas de Frente e Verso são obrigatórias.
+              </strong>
             </p>
             <div className="space-y-4 mb-6">
               {headers.map((header) => {

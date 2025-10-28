@@ -379,7 +379,11 @@ const StudyPage = () => {
       currentCardIndex === cardsInCurrentView.length - 1 &&
       !attempt?.completed
     ) {
-      toast.info("Você chegou ao final dos cards restantes.");
+      // Se estamos na última carta e a sessão não está completa, avisamos.
+      toast.info("Você chegou ao final dos cards restantes nesta tentativa.");
+    } else if (attempt?.completed) {
+      // Se a sessão já está completa e tentou avançar da última, não faz nada ou redireciona
+      // Poderia redirecionar para a tela de resultados, mas o estado completed já faz isso.
     }
   };
 
@@ -394,7 +398,7 @@ const StudyPage = () => {
   // AGORA OS RETURNS CONDICIONAIS
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
+      <div className="flex justify-center items-center min-h-screen dark:text-white">
         Carregando sessão de estudo...
       </div>
     );
@@ -467,14 +471,30 @@ const StudyPage = () => {
   }
 
   if (cardsInCurrentView.length === 0 && !isLoading && !attempt?.completed) {
+    // Se não há mais cartas para mostrar NESTA TENTATIVA, mas a tentativa ainda não foi marcada como completa
+    // (Isso pode acontecer se o usuário pausar e voltar depois de responder tudo, mas antes do completeStudySession ser chamado)
     return (
-      <div className="p-8 text-center dark:text-white">
-        <h2 className="text-2xl font-bold mb-4">Sessão de Estudo</h2>
-        <p className="mb-6">Você já estudou todas as cartas desta tentativa.</p>
+      <div className="min-h-screen flex flex-col justify-center items-center p-4 text-center dark:text-white">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow max-w-md w-full mb-6">
+          <h2 className="text-2xl font-bold mb-4">Fim da Tentativa</h2>
+          <p className="mb-6">
+            Você já estudou todas as cartas disponíveis nesta tentativa.
+          </p>
+          <p>✅ Certas: {attempt?.correct_count || 0}</p>
+          <p>❌ Erradas: {attempt?.incorrect_count || 0}</p>
+          <button
+            onClick={() => completeStudySession(attempt)} // Adiciona botão para forçar conclusão se necessário
+            className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition"
+            disabled={isProcessing}
+          >
+            {isProcessing ? "Finalizando..." : "Finalizar Sessão"}
+          </button>
+        </div>
         <div className="flex gap-4 justify-center">
           <button
             onClick={restartSession}
             className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition"
+            disabled={isProcessing}
           >
             Reiniciar Tentativa
           </button>
@@ -489,6 +509,7 @@ const StudyPage = () => {
     );
   }
 
+  // Se não carregou, erro, completo ou vazio, então temos um cartão para mostrar
   const isAnswered = isCardAnswered();
 
   return (
@@ -505,7 +526,8 @@ const StudyPage = () => {
               {deck?.name || "Estudo"}
             </span>
             <span>Tentativa: {attempt?.attempt_number || 1}</span>
-            <span className="hidden sm:inline">
+            {/* <<< REMOVIDO hidden sm:inline >>> */}
+            <span>
               {attempt?.correct_count || 0} ✅ / {attempt?.incorrect_count || 0}{" "}
               ❌ / {totalCardsInDeckAttempt} 🃏
             </span>
@@ -525,7 +547,7 @@ const StudyPage = () => {
             </span>
             <button
               onClick={goToNextCard}
-              disabled={currentCardIndex === cardsInCurrentView.length - 1}
+              disabled={currentCardIndex >= cardsInCurrentView.length - 1} // Ajustado para desabilitar no último
               className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded disabled:opacity-50 text-xs"
             >
               Próximo
@@ -544,7 +566,8 @@ const StudyPage = () => {
             <span>{Math.round(progressPercent)}%</span>
             <button
               onClick={restartSession}
-              className="px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs"
+              disabled={isProcessing}
+              className="px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs disabled:opacity-50"
               title="Reiniciar Tentativa"
             >
               🔄
@@ -563,9 +586,9 @@ const StudyPage = () => {
       {/* Conteúdo Principal */}
       <main className="flex-1 flex flex-col items-center justify-center p-4 pb-24">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-2xl text-center">
-          {/* Título (Nome do Deck) */}
+          {/* <<< Título (Nome do Cartão ou Deck) ATUALIZADO >>> */}
           <h2 className="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-300">
-            {deck?.name || "Estudo"}
+            {currentCard?.title || deck?.name || "Estudo"}
           </h2>
           {/* Frente */}
           <div className="mb-6 min-h-[100px] flex items-center justify-center">

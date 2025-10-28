@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 export function CardEditModal({ isOpen, onClose, card, onSave }) {
+  const [title, setTitle] = useState(""); // <<< ADICIONADO
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [theory, setTheory] = useState("");
@@ -11,17 +12,20 @@ export function CardEditModal({ isOpen, onClose, card, onSave }) {
 
   useEffect(() => {
     if (card) {
+      setTitle(card.title || ""); // <<< ADICIONADO
       setFront(card.front_content || "");
       setBack(card.back_content || "");
       setTheory(card.theory_notes || "");
       setSources(card.source_references?.join(", ") || "");
       setTags(card.tags?.join(", ") || "");
+      setActiveTab("front"); // Resetar aba ao abrir
     }
-  }, [card]);
+  }, [card, isOpen]); // Adicionado isOpen para resetar ao reabrir
 
   const handleSave = () => {
     onSave({
       ...card,
+      title: title.trim() || null, // <<< ADICIONADO (envia null se vazio)
       front_content: front,
       back_content: back,
       theory_notes: theory,
@@ -86,6 +90,20 @@ export function CardEditModal({ isOpen, onClose, card, onSave }) {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-3xl">
         <h2 className="text-xl font-bold mb-4">Editar Cartão</h2>
 
+        {/* <<< NOVO CAMPO TÍTULO >>> */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">
+            Título (Opcional)
+          </label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+          />
+        </div>
+        {/* <<< FIM DO NOVO CAMPO >>> */}
+
         <div className="mb-4 border-b border-gray-300 dark:border-gray-600">
           <div className="flex">
             <TabButton tabName="front" label="Frente" />
@@ -103,6 +121,7 @@ export function CardEditModal({ isOpen, onClose, card, onSave }) {
               type="text"
               value={sources}
               onChange={(e) => setSources(e.target.value)}
+              placeholder="Separadas por vírgula"
               className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
             />
           </div>
@@ -112,6 +131,7 @@ export function CardEditModal({ isOpen, onClose, card, onSave }) {
               type="text"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
+              placeholder="Separadas por vírgula"
               className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
             />
           </div>

@@ -3019,6 +3019,7 @@ CREATE TABLE public.cards (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     deck_id uuid NOT NULL,
     user_id uuid NOT NULL,
+    title text,
     front_content text NOT NULL,
     back_content text NOT NULL,
     theory_notes text,
