@@ -43,6 +43,7 @@ function App() {
         <Route path="/deck/:deckId/import" element={<ImportPage />} />
         <Route path="/stats" element={<StatsPage />} />
         <Route path="/search" element={<SearchPage />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
 
       {/* A página de estudo não usa o cabeçalho principal para uma experiência focada. */}
