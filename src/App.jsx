@@ -9,6 +9,7 @@ import StudyPage from "@/pages/StudyPage.jsx";
 import ImportPage from "@/pages/ImportPage.jsx";
 import StatsPage from "@/pages/StatsPage.jsx";
 import SearchPage from "@/pages/SearchPage.jsx";
+import NotFound from "@/pages/NotFound.jsx";
 
 // Componente de layout para rotas protegidas que inclui o cabeçalho.
 function ProtectedLayout() {
