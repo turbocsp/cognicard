@@ -1,6 +1,6 @@
 // src/App.jsx
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
-import { useAuth } from "@/AuthContext.jsx";
+import { useAuth } from "@/AuthContext.jsx"; // Import useAuth
 import Header from "@/components/Header.jsx";
 import LoginPage from "@/pages/LoginPage.jsx";
 import SignUpPage from "@/pages/SignUpPage.jsx";
@@ -10,10 +10,25 @@ import StudyPage from "@/pages/StudyPage.jsx";
 import ImportPage from "@/pages/ImportPage.jsx";
 import StatsPage from "@/pages/StatsPage.jsx";
 import SearchPage from "@/pages/SearchPage.jsx";
-import NotFoundPage from "@/pages/NotFoundPage.jsx"; // <<< 1. IMPORTE A NOVA PÁGINA
+import NotFoundPage from "@/pages/NotFoundPage.jsx";
 
-// Componente de layout para rotas protegidas que inclui o cabeçalho.
-function ProtectedLayout() {
+// --- Layouts de Proteção ---
+
+// Layout para rotas protegidas que PRECISAM do Header
+function ProtectedLayoutWithHeader() {
+  const { session, loading } = useAuth(); // <<< 1. Obter 'loading' do contexto
+
+  if (loading) {
+    // <<< 2. Mostrar estado de carregamento enquanto a sessão é verificada
+    return <div className="p-8 text-center">Verificando autenticação...</div>;
+  }
+
+  if (!session) {
+    // <<< 3. Redirecionar SÓ DEPOIS que o loading terminar e não houver sessão
+    return <Navigate to="/login" replace />;
+  }
+
+  // Se passou pelo loading e tem sessão, renderiza o layout
   return (
     <>
       <Header />
@@ -24,13 +39,25 @@ function ProtectedLayout() {
   );
 }
 
-function ProtectedRoute() {
-  const { session } = useAuth();
-  if (!session) {
-    return <Navigate to="/login" replace />;
-  }
-  return <ProtectedLayout />;
+// Layout para rotas protegidas que NÃO usam o Header (ex: StudyPage)
+function MinimalProtectedRouteLayout() {
+    const { session, loading } = useAuth(); // <<< 1. Obter 'loading'
+
+    if (loading) {
+        // <<< 2. Mostrar estado de carregamento
+        return <div className="p-8 text-center">Verificando autenticação...</div>;
+    }
+
+    if (!session) {
+        // <<< 3. Redirecionar SÓ DEPOIS do loading e sem sessão
+        return <Navigate to="/login" replace />;
+    }
+
+    // Se passou pelo loading e tem sessão, renderiza a rota filha
+    return <Outlet />;
 }
+
+// --- Componente Principal App ---
 
 function App() {
   return (
@@ -40,41 +67,26 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignUpPage />} />
 
-      {/* Rotas Protegidas com Layout (Header) */}
-      <Route element={<ProtectedRoute />}>
+      {/* Agrupamento de Rotas Protegidas COM Header */}
+      <Route element={<ProtectedLayoutWithHeader />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/deck/:deckId" element={<DeckDetailPage />} />
         <Route path="/deck/:deckId/import" element={<ImportPage />} />
         <Route path="/stats" element={<StatsPage />} />
         <Route path="/search" element={<SearchPage />} />
-        {/* Adicione outras rotas protegidas que usam o Header aqui */}
+        {/* Adicione outras rotas que precisam do Header aqui */}
       </Route>
 
-      {/* Rota Protegida Sem Layout Padrão (StudyPage) */}
-      {/* Verificamos a sessão aqui também, ou criamos um wrapper específico se necessário */}
-      <Route
-        path="/deck/:deckId/study"
-        element={
-          <ProtectedRouteWrapper> {/* Opcional: Wrapper para proteger sem Header */}
-            <StudyPage />
-          </ProtectedRouteWrapper>
-        }
-      />
+      {/* Agrupamento de Rotas Protegidas SEM Header */}
+       <Route element={<MinimalProtectedRouteLayout />}>
+        <Route path="/deck/:deckId/study" element={<StudyPage />} />
+         {/* Se houver outras rotas protegidas sem header, adicione aqui */}
+      </Route>
 
-      {/* <<< 2. ADICIONE A ROTA CATCH-ALL NO FINAL >>> */}
+      {/* Rota Catch-all 404 - Deve ser a ÚLTIMA */}
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }
-
-// Opcional: Wrapper para rotas protegidas que NÃO usam o ProtectedLayout (Header)
-function ProtectedRouteWrapper({ children }) {
-    const { session } = useAuth();
-    if (!session) {
-        return <Navigate to="/login" replace />;
-    }
-    return children;
-}
-
 
 export default App;
