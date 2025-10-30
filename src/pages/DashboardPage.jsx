@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-// import { supabase } from "@/supabaseClient"; // Não precisa mais importar supabase diretamente aqui
 import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
@@ -13,10 +12,9 @@ import ActivityCalendar from "@/components/ActivityCalendar";
 import DailySummaryModal from "@/components/DailySummaryModal";
 import Clock from "@/components/Clock";
 
-// <<< Importar os serviços >>>
 import deckService from "@/services/deckService";
 import folderService from "@/services/folderService";
-import { supabase } from "@/supabaseClient"; // Manter import para RPCs
+import { supabase } from "@/supabaseClient";
 
 export function DashboardPage() {
   const { session } = useAuth();
@@ -28,7 +26,12 @@ export function DashboardPage() {
 
   const [newItemName, setNewItemName] = useState("");
   const [newParentFolderId, setNewParentFolderId] = useState("root");
-  const [isSubmitting, setIsSubmitting] = useState(false); // Pode ser usado para granularidade depois
+
+  // <<< 1. Renomear estado para ser mais específico >>>
+  const [isCreating, setIsCreating] = useState(false); 
+  // <<< 2. Adicionar estado para exclusão >>>
+  const [isDeleting, setIsDeleting] = useState(false);
+  // (Poderíamos adicionar isMoving, isRenaming, etc. no futuro)
 
   const [itemToDelete, setItemToDelete] = useState(null);
   const [deckToMove, setDeckToMove] = useState(null);
@@ -47,9 +50,9 @@ export function DashboardPage() {
   const [currentYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState(null);
 
-  // <<< Atualizado para usar serviços >>>
   const fetchDashboardData = useCallback(async () => {
-    if (!session?.user?.id) return;
+    // ... (função sem alterações)
+     if (!session?.user?.id) return;
     setLoading(true);
 
     try {
@@ -95,8 +98,8 @@ export function DashboardPage() {
 
   // useEffect para construir a árvore (sem alterações)
   useEffect(() => {
-    // ... (código existente para buildTree)
-        const buildTree = (folders, decks) => {
+     // ... (código existente)
+     const buildTree = (folders, decks) => {
       const nodeMap = new Map();
       const tree = [];
 
@@ -146,8 +149,7 @@ export function DashboardPage() {
     setTreeData(buildTree(folders, decks));
   }, [folders, decks]);
 
-
-  // <<< Atualizado para usar serviços >>>
+  // <<< 3. Atualizar handleCreate para usar 'isCreating' >>>
   const handleCreate = async (type, e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -159,7 +161,7 @@ export function DashboardPage() {
     const parentId = newParentFolderId === "root" ? null : newParentFolderId;
 
     // Lógica de verificação de duplicados (sem alterações)
-    const siblings =
+     const siblings =
       type === "folder"
         ? folders.filter((f) => f.parent_folder_id === parentId)
         : decks.filter((d) => d.folder_id === parentId);
@@ -174,33 +176,35 @@ export function DashboardPage() {
       return;
     }
 
-    setIsSubmitting(true);
+
+    setIsCreating(true); // <<< Usar estado 'isCreating'
     const payload = { name: trimmedName, user_id: session.user.id };
     if (type === "deck") payload.folder_id = parentId;
     if (type === "folder") payload.parent_folder_id = parentId;
 
     try {
-        if (type === 'deck') {
-            await deckService.createDeck(payload);
-        } else {
-            await folderService.createFolder(payload);
-        }
-        toast.success(
-            `${type === "deck" ? "Baralho" : "Pasta"} criado com sucesso!`
-        );
-        setNewItemName("");
-        if (parentId) setOpenFolders((prev) => new Set(prev).add(parentId));
-        fetchDashboardData(); // Recarrega tudo
+      if (type === "deck") {
+        await deckService.createDeck(payload);
+      } else {
+        await folderService.createFolder(payload);
+      }
+      toast.success(
+        `${type === "deck" ? "Baralho" : "Pasta"} criado com sucesso!`
+      );
+      setNewItemName("");
+      if (parentId) setOpenFolders((prev) => new Set(prev).add(parentId));
+      fetchDashboardData(); // Recarrega tudo
     } catch (error) {
-        toast.error(error.message || `Erro ao criar ${type}.`);
+      toast.error(error.message || `Erro ao criar ${type}.`);
     } finally {
-        setIsSubmitting(false);
+      setIsCreating(false); // <<< Usar estado 'isCreating'
     }
   };
 
-  // <<< Atualizado para usar serviços >>>
+  // handleRename (sem alterações por agora, pode ser refinado depois)
   const handleRename = async (newName) => {
-    const trimmedNewName = newName.trim();
+     // ... (código existente)
+     const trimmedNewName = newName.trim();
     if (!editingItemId || !trimmedNewName) {
         setEditingItemId(null); // Cancela edição se nome vazio
         return;
@@ -239,7 +243,6 @@ export function DashboardPage() {
       return;
     }
 
-    // setIsSubmitting(true); // Poderia adicionar granularidade aqui
     try {
         if (type === 'deck') {
             await deckService.renameDeck(editingItemId, trimmedNewName);
@@ -253,13 +256,13 @@ export function DashboardPage() {
     } finally {
         setEditingItemId(null);
         setContextMenu(null);
-        // setIsSubmitting(false);
     }
   };
 
-  // <<< Atualizado para usar serviços >>>
+  // handleMoveDeck (sem alterações por agora)
   const handleMoveDeck = async (newFolderId) => {
-    if (!deckToMove) return;
+     // ... (código existente)
+     if (!deckToMove) return;
 
     // Lógica de verificação de duplicados (sem alterações)
     const isDuplicate = decks.some(
@@ -276,7 +279,6 @@ export function DashboardPage() {
       return;
     }
 
-     // setIsSubmitting(true);
     try {
         await deckService.moveDeck(deckToMove.id, newFolderId);
         toast.success(`Baralho movido com sucesso!`);
@@ -285,13 +287,13 @@ export function DashboardPage() {
         toast.error(error.message || "Erro ao mover o baralho.");
     } finally {
         setDeckToMove(null);
-         // setIsSubmitting(false);
     }
   };
 
-  // <<< Atualizado para usar serviços >>>
+  // handleMoveFolder (sem alterações por agora)
   const handleMoveFolder = async (newParentFolderId) => {
-    if (!folderToMove) return;
+     // ... (código existente)
+      if (!folderToMove) return;
 
     // Lógica de verificação de duplicados (sem alterações)
     const isDuplicate = folders.some(
@@ -308,7 +310,6 @@ export function DashboardPage() {
       return;
     }
 
-     // setIsSubmitting(true);
     try {
         await folderService.moveFolder(folderToMove.id, newParentFolderId);
         toast.success(`Pasta movida com sucesso!`);
@@ -317,35 +318,34 @@ export function DashboardPage() {
          toast.error(error.message || "Erro ao mover a pasta.");
     } finally {
         setFolderToMove(null);
-        // setIsSubmitting(false);
     }
   };
 
-  // <<< Atualizado para usar serviços >>>
+  // <<< 4. Atualizar handleDelete para usar 'isDeleting' >>>
   const handleDelete = async () => {
     if (!itemToDelete) return;
     const { id, type, name } = itemToDelete;
 
-     // setIsSubmitting(true);
+    setIsDeleting(true); // <<< Ativa estado de exclusão
     try {
-        if (type === 'deck') {
-            await deckService.deleteDeck(id);
-        } else {
-            await folderService.deleteFolder(id);
-        }
-         toast.success(`"${name}" foi excluído(a).`);
-         fetchDashboardData(); // Recarrega
+      if (type === "deck") {
+        await deckService.deleteDeck(id);
+      } else {
+        await folderService.deleteFolder(id);
+      }
+      toast.success(`"${name}" foi excluído(a).`);
+      fetchDashboardData(); // Recarrega
     } catch (error) {
-         toast.error(error.message || "Erro ao excluir.");
+      toast.error(error.message || "Erro ao excluir.");
     } finally {
-        setItemToDelete(null);
-        // setIsSubmitting(false);
+      setItemToDelete(null); // Fecha o modal
+      setIsDeleting(false); // <<< Desativa estado de exclusão
     }
   };
 
-  // Funções toggleFolder, getContextMenuItems, renderFolderOptions, handleTouchStart, handleTouchEnd (sem alterações)
+  // Funções toggleFolder, getContextMenuItems, renderFolderOptions, handleTouch... (sem alterações)
   const toggleFolder = (folderId) => {
-    // ... (código existente)
+     // ... (código existente)
      setOpenFolders((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(folderId)) newSet.delete(folderId);
@@ -355,7 +355,7 @@ export function DashboardPage() {
   };
 
   const getContextMenuItems = () => {
-    // ... (código existente)
+     // ... (código existente)
       if (!contextMenu) return [];
     const { item } = contextMenu;
     const items = [];
@@ -391,8 +391,8 @@ export function DashboardPage() {
   };
 
   const renderFolderOptions = (nodes, depth = 0) => {
-    // ... (código existente)
-     let options = [];
+     // ... (código existente)
+      let options = [];
     nodes.forEach((node) => {
       if (node.type === "folder") {
         options.push(
@@ -411,8 +411,8 @@ export function DashboardPage() {
   };
 
   const handleTouchStart = (e, item) => {
-    // ... (código existente)
-     e.stopPropagation();
+     // ... (código existente)
+      e.stopPropagation();
     const timeout = setTimeout(() => {
       setContextMenu({
         x: e.touches[0].clientX,
@@ -424,17 +424,16 @@ export function DashboardPage() {
   };
 
   const handleTouchEnd = (e) => {
-    // ... (código existente)
-     e.stopPropagation();
+     // ... (código existente)
+      e.stopPropagation();
     if (touchTimeout) clearTimeout(touchTimeout);
     setTouchTimeout(null);
   };
 
-
-  // Componente FileSystemNode (sem alterações na lógica principal, apenas chamadas indiretas)
+  // Componente FileSystemNode (sem alterações)
   const FileSystemNode = ({ node, depth }) => {
-    // ... (código existente)
-      const isEditing = editingItemId === node.id;
+     // ... (código existente)
+     const isEditing = editingItemId === node.id;
     const handleContextMenu = (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -479,11 +478,9 @@ export function DashboardPage() {
       );
     }
 
-    // --- CORREÇÃO DE ALINHAMENTO APLICADA ABAIXO ---
     return (
       <div
         className="flex items-center p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700/50"
-        // Aplica indentação base apenas se depth > 0
         style={{
           paddingLeft: depth > 0 ? `${depth * 20 + 4 + 16 + 8}px` : "4px",
         }}
@@ -508,16 +505,15 @@ export function DashboardPage() {
         )}
       </div>
     );
-  }; // Fim do FileSystemNode
+  }; 
 
-
-  // Renderização principal (JSX sem alterações significativas, apenas as chamadas de função nos handlers)
+  // --- Renderização ---
   return (
     <div className="min-h-screen pb-8" onClick={() => setContextMenu(null)}>
-      {/* ... (JSX da página, incluindo ActivityCalendar, Formulário, FileSystemNode, Modais) ... */}
-       <main className="space-y-8">
+      <main className="space-y-8">
+        {/* Bloco de Atividade (sem alterações) */}
         <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow">
-          {/* ... (código do resumo de atividade e calendário) ... */}
+           {/* ... (código do resumo de atividade e calendário) ... */}
            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
             <div>
               <h2 className="text-xl font-bold">Resumo de Atividade</h2>
@@ -580,12 +576,13 @@ export function DashboardPage() {
             view={activityView}
             onDayClick={(date) => setSelectedDate(date)}
           />
-
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Bloco de Decks/Pastas (sem alterações) */}
           <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow min-h-[400px]">
-            <GlobalSearch />
+             {/* ... (código do GlobalSearch e renderização da árvore) ... */}
+             <GlobalSearch />
             <div className="mt-4">
               {loading ? (
                 <p>Carregando...</p>
@@ -598,14 +595,15 @@ export function DashboardPage() {
               )}
             </div>
           </div>
+          
+          {/* Bloco de Criação (ATUALIZADO com 'isCreating') */}
           <div
             className="lg:col-span-1 space-y-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
               <h2 className="text-xl font-semibold mb-4">Criar Novo Item</h2>
-              {/* ... (Formulário de criação chamando handleCreate) ... */}
-               <div>
+              <div>
                 <label className="block text-sm font-medium mb-1">
                   Nome do Item
                 </label>
@@ -614,7 +612,9 @@ export function DashboardPage() {
                   value={newItemName}
                   onChange={(e) => setNewItemName(e.target.value)}
                   placeholder="Ex: Biologia Celular"
-                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  // <<< 5. Desabilitar input enquanto cria >>>
+                  disabled={isCreating} 
+                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
                 />
               </div>
               <div className="mt-4">
@@ -624,7 +624,9 @@ export function DashboardPage() {
                 <select
                   value={newParentFolderId}
                   onChange={(e) => setNewParentFolderId(e.target.value)}
-                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  // <<< 6. Desabilitar select enquanto cria >>>
+                  disabled={isCreating} 
+                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
                 >
                   <option value="root">Raiz</option>
                   {renderFolderOptions(treeData)}
@@ -633,17 +635,19 @@ export function DashboardPage() {
               <div className="flex space-x-4 mt-6">
                 <button
                   onClick={(e) => handleCreate("deck", e)}
-                  disabled={isSubmitting || !newItemName}
-                  className="flex-1 bg-blue-800 hover:bg-blue-900 dark:bg-blue-700 dark:hover:bg-blue-800 text-white font-bold py-2 px-4 rounded-md disabled:opacity-90 transition-colors"
+                  // <<< 7. Usar 'isCreating' e mudar texto >>>
+                  disabled={isCreating || !newItemName} 
+                  className="flex-1 bg-blue-800 hover:bg-blue-900 dark:bg-blue-700 dark:hover:bg-blue-800 text-white font-bold py-2 px-4 rounded-md disabled:opacity-75 disabled:cursor-not-allowed transition-colors"
                 >
-                  Criar Baralho
+                  {isCreating ? "A criar..." : "Criar Baralho"}
                 </button>
                 <button
                   onClick={(e) => handleCreate("folder", e)}
-                  disabled={isSubmitting || !newItemName}
-                  className="flex-1 bg-amber-500 hover:bg-amber-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md disabled:opacity-90 transition-colors"
+                   // <<< 8. Usar 'isCreating' e mudar texto >>>
+                  disabled={isCreating || !newItemName}
+                  className="flex-1 bg-amber-500 hover:bg-amber-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md disabled:opacity-75 disabled:cursor-not-allowed transition-colors"
                 >
-                  Criar Pasta
+                  {isCreating ? "A criar..." : "Criar Pasta"}
                 </button>
               </div>
             </div>
@@ -651,9 +655,8 @@ export function DashboardPage() {
         </div>
       </main>
 
-      {/* Modais e ContextMenu (sem alterações, apenas chamam os handlers refatorados) */}
-      {/* ... (JSX existente para ContextMenu, ConfirmationModal, MoveDeckModal, MoveFolderModal, DailySummaryModal) ... */}
-      {contextMenu && (
+      {/* Context Menu (sem alterações) */}
+       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
@@ -661,10 +664,14 @@ export function DashboardPage() {
           onClose={() => setContextMenu(null)}
         />
       )}
+
+      {/* Confirmation Modal (ATUALIZADO com 'isConfirming') */}
       <ConfirmationModal
         isOpen={!!itemToDelete}
         onClose={() => setItemToDelete(null)}
-        onConfirm={handleDelete} // Chama a função refatorada
+        onConfirm={handleDelete}
+        // <<< 9. Passar estado 'isDeleting' para o modal >>>
+        isConfirming={isDeleting} 
         title={`Excluir ${
           itemToDelete?.type === "folder" ? "Pasta" : "Baralho"
         }`}
@@ -674,10 +681,12 @@ export function DashboardPage() {
             : ""
         }`}
       />
+
+      {/* Outros Modais (sem alterações) */}
       <MoveDeckModal
         isOpen={!!deckToMove}
         onClose={() => setDeckToMove(null)}
-        onConfirm={handleMoveDeck} // Chama a função refatorada
+        onConfirm={handleMoveDeck}
         folders={folders}
         currentFolderId={deckToMove?.folder_id || null}
         deckName={deckToMove?.name || ""}
@@ -685,17 +694,16 @@ export function DashboardPage() {
       <MoveFolderModal
         isOpen={!!folderToMove}
         onClose={() => setFolderToMove(null)}
-        onConfirm={handleMoveFolder} // Chama a função refatorada
+        onConfirm={handleMoveFolder}
         allFolders={folders}
         folderToMove={folderToMove}
       />
-       <DailySummaryModal
+      <DailySummaryModal
         isOpen={!!selectedDate}
         onClose={() => setSelectedDate(null)}
         date={selectedDate}
         session={session}
       />
-
     </div>
   );
 }
