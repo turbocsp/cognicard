@@ -4,6 +4,7 @@ export function ConfirmationModal({
   onConfirm,
   title,
   message,
+  isConfirming = false, // <<< 1. Adicionar nova prop com valor padrão
 }) {
   if (!isOpen) {
     return null;
@@ -19,15 +20,19 @@ export function ConfirmationModal({
         <div className="flex justify-end gap-4">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
+            // <<< 2. Desabilitar "Cancelar" enquanto confirma >>>
+            disabled={isConfirming} 
+            className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancelar
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 bg-red-600 text-white rounded-md font-semibold hover:bg-red-700 transition-colors"
+            // <<< 3. Desabilitar "Confirmar" e mudar texto >>>
+            disabled={isConfirming}
+            className="px-4 py-2 bg-red-600 text-white rounded-md font-semibold hover:bg-red-700 transition-colors disabled:bg-red-400 disabled:opacity-75 disabled:cursor-not-allowed"
           >
-            Confirmar
+            {isConfirming ? "A excluir..." : "Confirmar"} 
           </button>
         </div>
       </div>
