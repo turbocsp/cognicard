@@ -1,31 +1,39 @@
+// src/components/CardEditModal.jsx
 import { useState, useEffect } from "react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
-export function CardEditModal({ isOpen, onClose, card, onSave }) {
-  const [title, setTitle] = useState(""); // <<< ADICIONADO
+export function CardEditModal({
+  isOpen,
+  onClose,
+  card,
+  onSave,
+  isSaving = false, // <<< 1. Adicionar prop
+}) {
+  const [title, setTitle] = useState("");
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [theory, setTheory] = useState("");
   const [sources, setSources] = useState("");
   const [tags, setTags] = useState("");
-  const [activeTab, setActiveTab] = useState("front"); // front, back, theory
+  const [activeTab, setActiveTab] = useState("front");
 
   useEffect(() => {
     if (card) {
-      setTitle(card.title || ""); // <<< ADICIONADO
+      setTitle(card.title || "");
       setFront(card.front_content || "");
       setBack(card.back_content || "");
       setTheory(card.theory_notes || "");
       setSources(card.source_references?.join(", ") || "");
       setTags(card.tags?.join(", ") || "");
-      setActiveTab("front"); // Resetar aba ao abrir
+      setActiveTab("front");
     }
-  }, [card, isOpen]); // Adicionado isOpen para resetar ao reabrir
+  }, [card, isOpen]);
 
   const handleSave = () => {
+    if (isSaving) return; // Prevenir cliques duplos
     onSave({
       ...card,
-      title: title.trim() || null, // <<< ADICIONADO (envia null se vazio)
+      title: title.trim() || null,
       front_content: front,
       back_content: back,
       theory_notes: theory,
@@ -63,7 +71,9 @@ export function CardEditModal({ isOpen, onClose, card, onSave }) {
         <textarea
           value={value}
           onChange={(e) => setter(e.target.value)}
-          className="w-full h-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+          // <<< 2. Desabilitar enquanto guarda >>>
+          disabled={isSaving}
+          className="w-full h-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 disabled:opacity-50"
         />
         <div className="w-full h-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 overflow-y-auto">
           <MarkdownRenderer content={value} />
@@ -75,11 +85,13 @@ export function CardEditModal({ isOpen, onClose, card, onSave }) {
   const TabButton = ({ tabName, label }) => (
     <button
       onClick={() => setActiveTab(tabName)}
+       // <<< 3. Desabilitar enquanto guarda >>>
+      disabled={isSaving}
       className={`px-4 py-2 text-sm font-medium rounded-t-lg ${
         activeTab === tabName
           ? "bg-blue-600 text-white"
           : "bg-gray-200 dark:bg-gray-600"
-      }`}
+      } disabled:opacity-50`}
     >
       {label}
     </button>
@@ -90,19 +102,17 @@ export function CardEditModal({ isOpen, onClose, card, onSave }) {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-3xl">
         <h2 className="text-xl font-bold mb-4">Editar Cartão</h2>
 
-        {/* <<< NOVO CAMPO TÍTULO >>> */}
         <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">
-            Título (Opcional)
-          </label>
+          <label className="block text-sm font-medium mb-1">Título (Opcional)</label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+             // <<< 4. Desabilitar enquanto guarda >>>
+            disabled={isSaving}
+            className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 disabled:opacity-50"
           />
         </div>
-        {/* <<< FIM DO NOVO CAMPO >>> */}
 
         <div className="mb-4 border-b border-gray-300 dark:border-gray-600">
           <div className="flex">
@@ -122,7 +132,9 @@ export function CardEditModal({ isOpen, onClose, card, onSave }) {
               value={sources}
               onChange={(e) => setSources(e.target.value)}
               placeholder="Separadas por vírgula"
-              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+               // <<< 5. Desabilitar enquanto guarda >>>
+              disabled={isSaving}
+              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 disabled:opacity-50"
             />
           </div>
           <div>
@@ -132,7 +144,9 @@ export function CardEditModal({ isOpen, onClose, card, onSave }) {
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="Separadas por vírgula"
-              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+               // <<< 6. Desabilitar enquanto guarda >>>
+              disabled={isSaving}
+              className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 disabled:opacity-50"
             />
           </div>
         </div>
@@ -140,15 +154,19 @@ export function CardEditModal({ isOpen, onClose, card, onSave }) {
         <div className="flex justify-end gap-4 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded-md"
+             // <<< 7. Desabilitar enquanto guarda >>>
+            disabled={isSaving}
+            className="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded-md disabled:opacity-50"
           >
             Cancelar
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md"
+             // <<< 8. Desabilitar e mudar texto >>>
+            disabled={isSaving}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md disabled:opacity-75 disabled:bg-blue-400"
           >
-            Salvar
+            {isSaving ? "A guardar..." : "Salvar"}
           </button>
         </div>
       </div>
