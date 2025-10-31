@@ -1,3 +1,4 @@
+// src/pages/DeckDetailPage.jsx
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/supabaseClient";
@@ -8,6 +9,7 @@ import { ConfirmationModal } from "@/components/ConfirmationModal.jsx";
 import { MarkdownGuideModal } from "@/components/MarkdownGuideModal.jsx";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+// (Não precisamos dos serviços aqui, pois as chamadas já estão no componente)
 
 function DeckDetailPage() {
   const { deckId } = useParams();
@@ -19,7 +21,7 @@ function DeckDetailPage() {
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const [newCard, setNewCard] = useState({
-    title: "", // <<< ADICIONADO
+    title: "",
     front_content: "",
     back_content: "",
     theory_notes: "",
@@ -27,11 +29,16 @@ function DeckDetailPage() {
     tags: "",
   });
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // <<< 1. Estados de loading granular >>>
+  const [isCreatingCard, setIsCreatingCard] = useState(false);
+  const [isDeletingCard, setIsDeletingCard] = useState(false);
+  const [isSavingCard, setIsSavingCard] = useState(false);
+
   const [cardToDelete, setCardToDelete] = useState(null);
   const [cardToEdit, setCardToEdit] = useState(null);
 
   const fetchDeckData = useCallback(async () => {
+    // ... (função sem alterações)
     if (!deckId || !session) return;
     setLoading(true);
     try {
@@ -43,7 +50,7 @@ function DeckDetailPage() {
 
       const cardsPromise = supabase
         .from("cards")
-        .select("*") // <<< Já busca todas as colunas, incluindo 'title' se existir
+        .select("*") 
         .eq("deck_id", deckId)
         .order("created_at");
 
@@ -90,15 +97,16 @@ function DeckDetailPage() {
     setNewCard((prev) => ({ ...prev, [name]: value }));
   };
 
+  // <<< 2. Atualizar handleCreateCard >>>
   const handleCreateCard = async (e) => {
     e.preventDefault();
     if (!newCard.front_content.trim() || !newCard.back_content.trim()) return;
-    setIsSubmitting(true);
+    setIsCreatingCard(true); // <<< Usar estado específico
 
     const { error } = await supabase.from("cards").insert({
       deck_id: deckId,
       user_id: session.user.id,
-      title: newCard.title.trim() || null, // <<< ADICIONADO (envia null se vazio)
+      title: newCard.title.trim() || null,
       front_content: newCard.front_content,
       back_content: newCard.back_content,
       theory_notes: newCard.theory_notes || null,
@@ -117,7 +125,6 @@ function DeckDetailPage() {
     } else {
       toast.success("Cartão adicionado com sucesso!");
       setNewCard({
-        // <<< ATUALIZADO para limpar o título
         title: "",
         front_content: "",
         back_content: "",
@@ -127,11 +134,13 @@ function DeckDetailPage() {
       });
       fetchDeckData();
     }
-    setIsSubmitting(false);
+    setIsCreatingCard(false); // <<< Usar estado específico
   };
 
+  // <<< 3. Atualizar handleDeleteCard >>>
   const handleDeleteCard = async () => {
     if (!cardToDelete) return;
+    setIsDeletingCard(true); // <<< Usar estado específico
     const { error } = await supabase
       .from("cards")
       .delete()
@@ -143,14 +152,16 @@ function DeckDetailPage() {
       fetchDeckData();
     }
     setCardToDelete(null);
+    setIsDeletingCard(false); // <<< Usar estado específico
   };
 
+  // <<< 4. Atualizar handleSaveEdit >>>
   const handleSaveEdit = async (updatedCard) => {
-    // A função no CardEditModal já envia o title, apenas precisamos garantir que ele está sendo atualizado aqui
+    setIsSavingCard(true); // <<< Usar estado específico
     const { error } = await supabase
       .from("cards")
       .update({
-        title: updatedCard.title, // <<< Garantir que o título está sendo enviado
+        title: updatedCard.title,
         front_content: updatedCard.front_content,
         back_content: updatedCard.back_content,
         theory_notes: updatedCard.theory_notes,
@@ -166,9 +177,11 @@ function DeckDetailPage() {
       fetchDeckData();
     }
     setCardToEdit(null);
+    setIsSavingCard(false); // <<< Usar estado específico
   };
 
   if (loading)
+    // ... (renderização de loading/erro sem alterações)
     return (
       <div className="p-8 text-center dark:text-white">
         Carregando baralho...
@@ -181,9 +194,11 @@ function DeckDetailPage() {
       </div>
     );
 
+
   return (
     <div className="min-h-screen pb-12">
       <header className="mb-8">
+        {/* ... (código do header sem alterações) ... */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h1 className="text-3xl font-bold">{deck.name}</h1>
           <div className="flex flex-wrap gap-2">
@@ -215,9 +230,9 @@ function DeckDetailPage() {
                 Guia de Formatação
               </button>
             </div>
+            {/* <<< 5. Atualizar formulário com 'isCreatingCard' >>> */}
             <form onSubmit={handleCreateCard} className="space-y-4">
-              {/* <<< NOVO CAMPO TÍTULO >>> */}
-              <div>
+               <div>
                 <label
                   htmlFor="title"
                   className="block text-sm font-medium mb-1"
@@ -230,11 +245,10 @@ function DeckDetailPage() {
                   id="title"
                   value={newCard.title}
                   onChange={handleInputChange}
-                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isCreatingCard} // <<< Usar estado
+                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
-              {/* <<< FIM DO NOVO CAMPO >>> */}
-
               <div>
                 <label
                   htmlFor="front_content"
@@ -248,7 +262,8 @@ function DeckDetailPage() {
                   value={newCard.front_content}
                   onChange={handleInputChange}
                   rows={3}
-                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isCreatingCard} // <<< Usar estado
+                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                   required
                 />
               </div>
@@ -265,7 +280,8 @@ function DeckDetailPage() {
                   value={newCard.back_content}
                   onChange={handleInputChange}
                   rows={3}
-                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isCreatingCard} // <<< Usar estado
+                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                   required
                 />
               </div>
@@ -282,7 +298,8 @@ function DeckDetailPage() {
                   value={newCard.theory_notes}
                   onChange={handleInputChange}
                   rows={2}
-                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isCreatingCard} // <<< Usar estado
+                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
               <div>
@@ -298,7 +315,8 @@ function DeckDetailPage() {
                   id="source_references"
                   value={newCard.source_references}
                   onChange={handleInputChange}
-                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isCreatingCard} // <<< Usar estado
+                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
               <div>
@@ -314,21 +332,23 @@ function DeckDetailPage() {
                   id="tags"
                   value={newCard.tags}
                   onChange={handleInputChange}
-                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isCreatingCard} // <<< Usar estado
+                  className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition disabled:bg-gray-400"
+                disabled={isCreatingCard} // <<< Usar estado
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition disabled:opacity-75 disabled:bg-blue-400 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? "Adicionando..." : "Adicionar Cartão"}
+                {isCreatingCard ? "A adicionar..." : "Adicionar Cartão"}
               </button>
             </form>
           </div>
         </div>
         <div className="lg:col-span-2">
-          <h2 className="text-xl font-semibold mb-4">
+           {/* ... (código da lista de cartões sem alterações) ... */}
+           <h2 className="text-xl font-semibold mb-4">
             Cartões no Baralho ({cards.length})
           </h2>
           <div className="space-y-4">
@@ -338,7 +358,6 @@ function DeckDetailPage() {
                   key={card.id}
                   className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow relative group"
                 >
-                  {/* Mostra o título do cartão se existir */}
                   {card.title && (
                     <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2 truncate">
                       {card.title}
@@ -348,9 +367,10 @@ function DeckDetailPage() {
                     <button
                       onClick={() => setCardToEdit(card)}
                       title="Editar"
-                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full"
+                       // <<< 6. Desabilitar botões se alguma ação estiver a decorrer >>>
+                      disabled={isDeletingCard || isSavingCard}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full disabled:opacity-25"
                     >
-                      {/* SVG Editar */}
                       <svg
                         className="w-5 h-5 text-gray-500"
                         fill="none"
@@ -368,9 +388,10 @@ function DeckDetailPage() {
                     <button
                       onClick={() => setCardToDelete(card)}
                       title="Excluir"
-                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full"
+                       // <<< 6. Desabilitar botões se alguma ação estiver a decorrer >>>
+                      disabled={isDeletingCard || isSavingCard}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full disabled:opacity-25"
                     >
-                      {/* SVG Excluir */}
                       <svg
                         className="w-5 h-5 text-red-500"
                         fill="none"
@@ -386,12 +407,7 @@ function DeckDetailPage() {
                       </svg>
                     </button>
                   </div>
-                  {/* Ajusta padding-top se o título existir para não sobrepor */}
-                  <div
-                    className={`prose prose-sm dark:prose-invert max-w-none pr-16 ${
-                      card.title ? "pt-1" : ""
-                    }`}
-                  >
+                  <div className={`prose prose-sm dark:prose-invert max-w-none pr-16 ${card.title ? 'pt-1' : ''}`}>
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {card.front_content}
                     </ReactMarkdown>
@@ -450,10 +466,12 @@ function DeckDetailPage() {
           </div>
         </div>
       </div>
+      {/* <<< 7. Atualizar Modais para passar os estados de loading >>> */}
       <ConfirmationModal
         isOpen={!!cardToDelete}
         onClose={() => setCardToDelete(null)}
         onConfirm={handleDeleteCard}
+        isConfirming={isDeletingCard} // <<< Passar estado
         title="Confirmar Exclusão de Cartão"
         message="Tem certeza que deseja excluir este cartão? Esta ação não pode ser desfeita."
       />
@@ -461,6 +479,7 @@ function DeckDetailPage() {
         isOpen={!!cardToEdit}
         onClose={() => setCardToEdit(null)}
         onSave={handleSaveEdit}
+        isSaving={isSavingCard} // <<< Passar estado
         card={cardToEdit}
       />
       <MarkdownGuideModal

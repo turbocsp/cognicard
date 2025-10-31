@@ -1,3 +1,4 @@
+// src/pages/ImportPage.jsx
 import { useState, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Papa from "papaparse";
@@ -5,8 +6,7 @@ import { supabase } from "@/supabaseClient";
 import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
 
-const TARGET_FIELDS = [
-  // <<< ATUALIZADO
+const TARGET_FIELDS = [ 
   { value: "ignore", label: "Ignorar esta coluna" },
   { value: "title", label: "Título do Cartão" },
   { value: "front_content", label: "Frente (Pergunta)" },
@@ -17,6 +17,7 @@ const TARGET_FIELDS = [
 ];
 
 const DELIMITERS = [
+  // ... (sem alterações)
   { value: "", label: "Automático" },
   { value: ",", label: "Vírgula (,)" },
   { value: ";", label: "Ponto e vírgula (;)" },
@@ -33,11 +34,16 @@ function ImportPage() {
   const [delimiter, setDelimiter] = useState("");
   const [headers, setHeaders] = useState([]);
   const [mappings, setMappings] = useState({});
-  const [isProcessing, setIsProcessing] = useState(false);
+  
+  // <<< 1. Dividir estados de loading >>>
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  
   const [step, setStep] = useState(1);
   const fullCsvData = useRef([]);
 
   const handleFileChange = (e) => {
+    // ... (sem alterações)
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
     setFile(selectedFile);
@@ -46,16 +52,18 @@ function ImportPage() {
     setHeaders([]);
   };
 
+  // <<< 2. Atualizar handleAnalyzeAndMap >>>
   const handleAnalyzeAndMap = useCallback(() => {
     if (!file) return;
-    setIsProcessing(true);
+    setIsAnalyzing(true); // <<< Usar estado específico
 
     Papa.parse(file, {
       delimiter: delimiter,
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        setIsProcessing(false);
+        setIsAnalyzing(false); // <<< Usar estado específico
+        // ... (resto da lógica sem alterações)
         const criticalErrors = results.errors.filter(
           (e) => e.code !== "TooManyFields" && e.code !== "TooFewFields"
         );
@@ -81,20 +89,12 @@ function ImportPage() {
             initialMappings[field] = "ignore"; // Default to ignore
             // Basic heuristic for auto-mapping
             const lowerField = field.toLowerCase();
-            if (
-              lowerField.includes("frente") ||
-              lowerField.includes("pergunta")
-            )
-              initialMappings[field] = "front_content";
-            if (lowerField.includes("verso") || lowerField.includes("resposta"))
-              initialMappings[field] = "back_content";
-            if (lowerField.includes("titulo") || lowerField.includes("título"))
-              initialMappings[field] = "title";
-            if (lowerField.includes("teoria"))
-              initialMappings[field] = "theory_notes";
-            if (lowerField.includes("fonte") || lowerField.includes("source"))
-              initialMappings[field] = "source_references";
-            if (lowerField.includes("tag")) initialMappings[field] = "tags";
+            if (lowerField.includes('frente') || lowerField.includes('pergunta')) initialMappings[field] = 'front_content';
+            if (lowerField.includes('verso') || lowerField.includes('resposta')) initialMappings[field] = 'back_content';
+            if (lowerField.includes('titulo') || lowerField.includes('título')) initialMappings[field] = 'title';
+            if (lowerField.includes('teoria')) initialMappings[field] = 'theory_notes';
+            if (lowerField.includes('fonte') || lowerField.includes('source')) initialMappings[field] = 'source_references';
+            if (lowerField.includes('tag')) initialMappings[field] = 'tags';
           });
           setMappings(initialMappings);
           fullCsvData.current = results.data;
@@ -106,12 +106,13 @@ function ImportPage() {
         }
       },
       error: (err) => {
-        setIsProcessing(false);
+        setIsAnalyzing(false); // <<< Usar estado específico
         toast.error(`Falha ao processar o arquivo: ${err.message}`);
       },
     });
   }, [file, delimiter]);
 
+  // <<< 3. Atualizar handleFinalImport >>>
   const handleFinalImport = async () => {
     if (fullCsvData.current.length === 0 || !session) return;
 
@@ -126,17 +127,17 @@ function ImportPage() {
       return;
     }
 
-    setIsProcessing(true);
+    setIsImporting(true); // <<< Usar estado específico
 
     const cardsToInsert = fullCsvData.current
       .map((row) => {
+         // ... (lógica de mapeamento sem alterações)
         const newCard = { deck_id: deckId, user_id: session.user.id };
         for (const header of headers) {
           const targetField = mappings[header];
           if (targetField !== "ignore") {
             const value = row[header];
             if (targetField === "tags" || targetField === "source_references") {
-              // Handle comma-separated values for tags and sources
               newCard[targetField] = value
                 ? value
                     .split(",")
@@ -144,44 +145,38 @@ function ImportPage() {
                     .filter((s) => s)
                 : [];
             } else if (targetField === "title") {
-              // Handle title, ensure it's null if empty/whitespace
-              newCard[targetField] =
-                value && value.trim() ? value.trim() : null;
+              newCard[targetField] = value && value.trim() ? value.trim() : null;
             } else {
-              // Handle front_content, back_content, theory_notes
-              newCard[targetField] = value || null; // Use null if value is empty/undefined
+              newCard[targetField] = value || null; 
             }
           }
         }
-        // Ensure essential fields are present
         if (!newCard.front_content || !newCard.back_content) {
-          return null; // Skip card if front or back is missing
+          return null;
         }
         return newCard;
       })
-      .filter((card) => card !== null); // Filter out invalid cards
+      .filter(card => card !== null); 
 
     if (cardsToInsert.length === 0) {
       toast.error(
         "Nenhum cartão válido para importar. Verifique o mapeamento e se as colunas de Frente e Verso têm conteúdo."
       );
-      setIsProcessing(false);
+      setIsImporting(false); // <<< Usar estado específico
       return;
     }
 
     try {
-      const { error } = await supabase.from("cards").insert(cardsToInsert);
+        const { error } = await supabase.from("cards").insert(cardsToInsert);
+        if (error) throw error;
 
-      if (error) {
-        throw error;
-      }
+        toast.success(`${cardsToInsert.length} cartões importados com sucesso!`);
+        navigate(`/deck/${deckId}`);
 
-      toast.success(`${cardsToInsert.length} cartões importados com sucesso!`);
-      navigate(`/deck/${deckId}`);
     } catch (error) {
-      toast.error(`Ocorreu um erro ao salvar os cartões: ${error.message}`);
+         toast.error(`Ocorreu um erro ao salvar os cartões: ${error.message}`);
     } finally {
-      setIsProcessing(false);
+        setIsImporting(false); // <<< Usar estado específico
     }
   };
 
@@ -199,6 +194,7 @@ function ImportPage() {
     );
   };
 
+  // <<< 4. Atualizar JSX com os novos estados de loading >>>
   return (
     <div className="min-h-screen">
       <header className="mb-8">
@@ -214,7 +210,8 @@ function ImportPage() {
             <div className="mb-4">
               <label
                 htmlFor="csv-upload"
-                className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 inline-block"
+                // Desabilitar se estiver a analisar
+                className={`cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 inline-block ${isAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 Escolher Arquivo (.csv ou .txt)
               </label>
@@ -224,6 +221,7 @@ function ImportPage() {
                 accept=".csv,.txt"
                 className="hidden"
                 onChange={handleFileChange}
+                disabled={isAnalyzing} // Desabilitar
               />
               {fileName && (
                 <span className="ml-4 font-semibold">{fileName}</span>
@@ -239,7 +237,7 @@ function ImportPage() {
                   {DELIMITERS.map((d) => (
                     <label
                       key={d.value || "auto"}
-                      className="flex items-center space-x-2 cursor-pointer"
+                      className={`flex items-center space-x-2 ${isAnalyzing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                     >
                       <input
                         type="radio"
@@ -247,6 +245,7 @@ function ImportPage() {
                         value={d.value}
                         checked={delimiter === d.value}
                         onChange={(e) => setDelimiter(e.target.value)}
+                        disabled={isAnalyzing} // Desabilitar
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                       />
                       <span>{d.label}</span>
@@ -255,10 +254,10 @@ function ImportPage() {
                 </div>
                 <button
                   onClick={handleAnalyzeAndMap}
-                  disabled={isProcessing}
-                  className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition duration-300"
+                  disabled={isAnalyzing} // Usar estado específico
+                  className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-75 disabled:cursor-not-allowed"
                 >
-                  {isProcessing ? "Analisando..." : "Analisar e Mapear Colunas"}
+                  {isAnalyzing ? "Analisando..." : "Analisar e Mapear Colunas"}
                 </button>
               </div>
             )}
@@ -272,9 +271,7 @@ function ImportPage() {
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
               Associe cada coluna do seu arquivo a um campo do CogniCard.{" "}
-              <strong className="text-red-500">
-                As colunas de Frente e Verso são obrigatórias.
-              </strong>
+              <strong className="text-red-500">As colunas de Frente e Verso são obrigatórias.</strong>
             </p>
             <div className="space-y-4 mb-6">
               {headers.map((header) => {
@@ -295,7 +292,8 @@ function ImportPage() {
                           [header]: e.target.value,
                         }))
                       }
-                      className="w-full px-3 py-2 border rounded-md bg-gray-200 text-black dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={isImporting} // Desabilitar durante a importação final
+                      className="w-full px-3 py-2 border rounded-md bg-gray-200 text-black dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                     >
                       {availableFields.map((field) => (
                         <option key={field.value} value={field.value}>
@@ -310,16 +308,17 @@ function ImportPage() {
             <div className="flex justify-between mt-6">
               <button
                 onClick={() => setStep(1)}
-                className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition duration-300"
+                disabled={isImporting} // Desabilitar "Voltar" durante importação
+                className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-50"
               >
                 Voltar
               </button>
               <button
                 onClick={handleFinalImport}
-                disabled={isProcessing}
-                className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300"
+                disabled={isImporting} // Usar estado específico
+                className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-75 disabled:cursor-not-allowed"
               >
-                {isProcessing ? "Importando..." : `Finalizar Importação`}
+                {isImporting ? "A importar..." : `Finalizar Importação`}
               </button>
             </div>
           </div>

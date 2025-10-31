@@ -1,5 +1,5 @@
+// src/pages/DashboardPage.jsx
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/supabaseClient";
 import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
@@ -13,6 +13,10 @@ import ActivityCalendar from "@/components/ActivityCalendar";
 import DailySummaryModal from "@/components/DailySummaryModal";
 import Clock from "@/components/Clock";
 
+import deckService from "@/services/deckService";
+import folderService from "@/services/folderService";
+import { supabase } from "@/supabaseClient";
+
 export function DashboardPage() {
   const { session } = useAuth();
 
@@ -23,7 +27,13 @@ export function DashboardPage() {
 
   const [newItemName, setNewItemName] = useState("");
   const [newParentFolderId, setNewParentFolderId] = useState("root");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Estados de loading granular
+  const [isCreating, setIsCreating] = useState(false); 
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isMoving, setIsMoving] = useState(false); // <<< 1. Adicionar estado de Mover
+  const [isRenamingId, setIsRenamingId] = useState(null); // <<< 2. Adicionar estado de Renomear (por ID)
+
 
   const [itemToDelete, setItemToDelete] = useState(null);
   const [deckToMove, setDeckToMove] = useState(null);
@@ -43,58 +53,53 @@ export function DashboardPage() {
   const [selectedDate, setSelectedDate] = useState(null);
 
   const fetchDashboardData = useCallback(async () => {
-    if (!session) return;
+    // ... (função sem alterações)
+     if (!session?.user?.id) return;
     setLoading(true);
 
-    const deckPromise = supabase
-      .from("decks")
-      .select("*")
-      .eq("user_id", session.user.id);
-    const folderPromise = supabase
-      .from("folders")
-      .select("*")
-      .eq("user_id", session.user.id);
-    const streakPromise = supabase
-      .rpc("get_study_streak", { p_user_id: session.user.id })
-      .single();
-    const activityPromise = supabase.rpc("get_study_activity", {
-      p_user_id: session.user.id,
-      p_year: currentYear,
-    });
+    try {
+        const [deckData, folderData, streakResult, activityResult] = await Promise.all([
+            deckService.getUserDecks(session.user.id),
+            folderService.getUserFolders(session.user.id),
+            supabase
+                .rpc("get_study_streak", { p_user_id: session.user.id })
+                .single(),
+            supabase
+                .rpc("get_study_activity", {
+                    p_user_id: session.user.id,
+                    p_year: currentYear,
+                })
+        ]);
 
-    const [
-      { data: deckData, error: deckError },
-      { data: folderData, error: folderError },
-      { data: streakResult, error: streakError },
-      { data: activityResult, error: activityError },
-    ] = await Promise.all([
-      deckPromise,
-      folderPromise,
-      streakPromise,
-      activityPromise,
-    ]);
+        setDecks(deckData);
+        setFolders(folderData);
 
-    if (deckError) toast.error(deckError.message);
-    else setDecks(deckData || []);
+        if (streakResult.error) toast.error(`Streak Error: ${streakResult.error.message}`);
+        else if (streakResult.data) setStreakData(streakResult.data);
 
-    if (folderError) toast.error(folderError.message);
-    else setFolders(folderData || []);
+        if (activityResult.error) toast.error(`Activity Error: ${activityResult.error.message}`);
+        else setActivityData(activityResult.data || []);
 
-    if (streakError) toast.error(`Streak Error: ${streakError.message}`);
-    else if (streakResult) setStreakData(streakResult);
-
-    if (activityError) toast.error(`Activity Error: ${activityError.message}`);
-    else setActivityData(activityResult || []);
-
-    setLoading(false);
+    } catch (error) {
+        toast.error(error.message || "Erro ao carregar dados do painel.");
+        setDecks([]);
+        setFolders([]);
+        setStreakData({ current_streak: 0, longest_streak: 0 });
+        setActivityData([]);
+    } finally {
+        setLoading(false);
+    }
   }, [session, currentYear]);
+
 
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
+  // useEffect para construir a árvore (sem alterações)
   useEffect(() => {
-    const buildTree = (folders, decks) => {
+     // ... (código existente)
+     const buildTree = (folders, decks) => {
       const nodeMap = new Map();
       const tree = [];
 
@@ -144,89 +149,123 @@ export function DashboardPage() {
     setTreeData(buildTree(folders, decks));
   }, [folders, decks]);
 
+  // handleCreate (atualizado na etapa anterior, sem novas alterações)
   const handleCreate = async (type, e) => {
+     // ... (código existente)
     e.preventDefault();
     e.stopPropagation();
-    if (!newItemName.trim()) {
+    const trimmedName = newItemName.trim();
+    if (!trimmedName) {
       toast.error("O nome não pode estar vazio.");
       return;
     }
     const parentId = newParentFolderId === "root" ? null : newParentFolderId;
+
     const siblings =
       type === "folder"
         ? folders.filter((f) => f.parent_folder_id === parentId)
         : decks.filter((d) => d.folder_id === parentId);
     if (
       siblings.some(
-        (s) => s.name.toLowerCase() === newItemName.trim().toLowerCase()
+        (s) => s.name.toLowerCase() === trimmedName.toLowerCase()
       )
     ) {
       toast.error(
-        `Já existe um item com o nome "${newItemName.trim()}" neste local.`
+        `Já existe um item com o nome "${trimmedName}" neste local.`
       );
       return;
     }
-    setIsSubmitting(true);
-    const table = type === "deck" ? "decks" : "folders";
-    const payload = { name: newItemName.trim(), user_id: session.user.id };
+
+    setIsCreating(true);
+    const payload = { name: trimmedName, user_id: session.user.id };
     if (type === "deck") payload.folder_id = parentId;
     if (type === "folder") payload.parent_folder_id = parentId;
 
-    const { error } = await supabase.from(table).insert(payload);
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success(
-        `${type === "deck" ? "Baralho" : "Pasta"} criado com sucesso!`
-      );
-      setNewItemName("");
-      if (parentId) setOpenFolders((prev) => new Set(prev).add(parentId));
-      fetchDashboardData();
+    try {
+        if (type === 'deck') {
+            await deckService.createDeck(payload);
+        } else {
+            await folderService.createFolder(payload);
+        }
+        toast.success(
+            `${type === "deck" ? "Baralho" : "Pasta"} criado com sucesso!`
+        );
+        setNewItemName("");
+        if (parentId) setOpenFolders((prev) => new Set(prev).add(parentId));
+        fetchDashboardData();
+    } catch (error) {
+        toast.error(error.message || `Erro ao criar ${type}.`);
+    } finally {
+        setIsCreating(false);
     }
-    setIsSubmitting(false);
   };
 
+  // <<< 3. Atualizar handleRename para usar 'isRenamingId' >>>
   const handleRename = async (newName) => {
-    if (!editingItemId) return;
+    const trimmedNewName = newName.trim();
+    if (!editingItemId || !trimmedNewName) {
+        setEditingItemId(null);
+        return;
+    }
     const item =
       folders.find((f) => f.id === editingItemId) ||
       decks.find((d) => d.id === editingItemId);
-    if (!item) return;
+
+    if (!item || item.name === trimmedNewName) {
+        setEditingItemId(null);
+        return;
+    }
+
     const type = "parent_folder_id" in item ? "folder" : "deck";
     const parentId = type === "folder" ? item.parent_folder_id : item.folder_id;
+
+    // Verificação de duplicados (sem alterações)
     const siblingFolders = folders.filter(
       (f) => f.parent_folder_id === parentId && f.id !== editingItemId
     );
     const siblingDecks = decks.filter(
       (d) => d.folder_id === parentId && d.id !== editingItemId
     );
-    if (
+     if (
       (type === "folder" &&
         siblingFolders.some(
-          (f) => f.name.toLowerCase() === newName.toLowerCase()
+          (f) => f.name.toLowerCase() === trimmedNewName.toLowerCase()
         )) ||
       (type === "deck" &&
         siblingDecks.some(
-          (d) => d.name.toLowerCase() === newName.toLowerCase()
+          (d) => d.name.toLowerCase() === trimmedNewName.toLowerCase()
         ))
     ) {
-      toast.error(`Já existe um item com o nome "${newName}" neste local.`);
-      setEditingItemId(null);
-      return;
+      toast.error(`Já existe um item com o nome "${trimmedNewName}" neste local.`);
+      // Não fechar o modal de edição para o utilizador poder corrigir
+      return; 
     }
-    const { error } = await supabase
-      .from(type === "folder" ? "folders" : "decks")
-      .update({ name: newName })
-      .eq("id", editingItemId);
-    if (error) toast.error(error.message);
-    else toast.success("Renomeado com sucesso!");
-    setEditingItemId(null);
+
+    setIsRenamingId(editingItemId); // <<< Ativa o estado de loading para este ID
+    setEditingItemId(null); // <<< Fecha o <InlineEdit>
     setContextMenu(null);
-    fetchDashboardData();
+
+    try {
+        if (type === 'deck') {
+            await deckService.renameDeck(isRenamingId, trimmedNewName);
+        } else {
+            await folderService.renameFolder(isRenamingId, trimmedNewName);
+        }
+        toast.success("Renomeado com sucesso!");
+        fetchDashboardData(); // Recarrega
+    } catch (error) {
+        toast.error(error.message || "Erro ao renomear.");
+        // Se der erro, o fetchDashboardData() no finally vai recarregar o nome antigo
+    } finally {
+        setIsRenamingId(null); // <<< Limpa o estado de loading
+    }
   };
 
+  // <<< 4. Atualizar handleMoveDeck para usar 'isMoving' >>>
   const handleMoveDeck = async (newFolderId) => {
     if (!deckToMove) return;
+
+    // Verificação de duplicados (sem alterações)
     const isDuplicate = decks.some(
       (d) =>
         d.name.toLowerCase() === deckToMove.name.toLowerCase() &&
@@ -237,59 +276,81 @@ export function DashboardPage() {
       toast.error(
         `Já existe um baralho com o nome "${deckToMove.name}" na pasta de destino.`
       );
-      setDeckToMove(null);
+      // Não fechar o modal, permitir ao utilizador corrigir (fechamos o modal após a ação)
       return;
     }
-    const { error } = await supabase
-      .from("decks")
-      .update({ folder_id: newFolderId })
-      .eq("id", deckToMove.id);
-    if (error) toast.error(`Erro ao mover o baralho: ${error.message}`);
-    else toast.success(`Baralho movido com sucesso!`);
-    setDeckToMove(null);
-    fetchDashboardData();
+
+    setIsMoving(true); // <<< Ativa o estado de Mover
+    try {
+        await deckService.moveDeck(deckToMove.id, newFolderId);
+        toast.success(`Baralho movido com sucesso!`);
+        fetchDashboardData(); // Recarrega
+    } catch(error) {
+        toast.error(error.message || "Erro ao mover o baralho.");
+    } finally {
+        setDeckToMove(null); // Fecha o modal
+        setIsMoving(false); // <<< Desativa o estado de Mover
+    }
   };
 
+  // <<< 5. Atualizar handleMoveFolder para usar 'isMoving' >>>
   const handleMoveFolder = async (newParentFolderId) => {
     if (!folderToMove) return;
+
+    // Verificação de duplicados (sem alterações)
     const isDuplicate = folders.some(
       (f) =>
         f.name.toLowerCase() === folderToMove.name.toLowerCase() &&
         f.parent_folder_id === newParentFolderId &&
         f.id !== folderToMove.id
     );
-    if (isDuplicate) {
+     if (isDuplicate) {
       toast.error(
         `Já existe uma pasta com o nome "${folderToMove.name}" no destino.`
       );
-      setFolderToMove(null);
-      return;
+      return; // Não fecha o modal
     }
-    const { error } = await supabase
-      .from("folders")
-      .update({ parent_folder_id: newParentFolderId })
-      .eq("id", folderToMove.id);
-    if (error) toast.error(`Erro ao mover a pasta: ${error.message}`);
-    else toast.success(`Pasta movida com sucesso!`);
-    setFolderToMove(null);
-    fetchDashboardData();
+
+    setIsMoving(true); // <<< Ativa o estado de Mover
+    try {
+        await folderService.moveFolder(folderToMove.id, newParentFolderId);
+        toast.success(`Pasta movida com sucesso!`);
+        fetchDashboardData(); // Recarrega
+    } catch(error) {
+         toast.error(error.message || "Erro ao mover a pasta.");
+    } finally {
+        setFolderToMove(null); // Fecha o modal
+        setIsMoving(false); // <<< Desativa o estado de Mover
+    }
   };
 
+  // handleDelete (atualizado na etapa anterior, sem novas alterações)
   const handleDelete = async () => {
-    if (!itemToDelete) return;
+     // ... (código existente)
+     if (!itemToDelete) return;
     const { id, type, name } = itemToDelete;
-    const { error } = await supabase
-      .from(type === "folder" ? "folders" : "decks")
-      .delete()
-      .eq("id", id);
-    if (error) toast.error(`Erro ao excluir: ${error.message}`);
-    else toast.success(`"${name}" foi excluído(a).`);
-    setItemToDelete(null);
-    fetchDashboardData();
+
+    setIsDeleting(true);
+    try {
+        if (type === 'deck') {
+            await deckService.deleteDeck(id);
+        } else {
+            await folderService.deleteFolder(id);
+        }
+         toast.success(`"${name}" foi excluído(a).`);
+         fetchDashboardData();
+    } catch (error) {
+         toast.error(error.message || "Erro ao excluir.");
+    } finally {
+        setItemToDelete(null);
+        setIsDeleting(false);
+    }
   };
 
+  // Funções toggleFolder, getContextMenuItems, renderFolderOptions, handleTouch... (sem alterações)
   const toggleFolder = (folderId) => {
-    setOpenFolders((prev) => {
+     // ... (código existente)
+     setOpenFolders((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(folderId)) newSet.delete(folderId);
       else newSet.add(folderId);
@@ -298,7 +359,8 @@ export function DashboardPage() {
   };
 
   const getContextMenuItems = () => {
-    if (!contextMenu) return [];
+     // ... (código existente)
+     if (!contextMenu) return [];
     const { item } = contextMenu;
     const items = [];
     if (item.type === "folder") {
@@ -314,7 +376,9 @@ export function DashboardPage() {
     }
     items.push({
       label: "Editar Nome",
+      // <<< 6. Desabilitar "Editar" se já estiver a renomear ESTE item >>>
       action: () => setEditingItemId(item.id),
+      disabled: isRenamingId === item.id,
     });
     items.push({
       label: "Mover",
@@ -322,18 +386,25 @@ export function DashboardPage() {
         item.type === "deck"
           ? setDeckToMove(item.data)
           : setFolderToMove(item.data),
+       // <<< 7. Desabilitar "Mover" se estiver a renomear este item (evita conflitos) >>>
+      disabled: isRenamingId === item.id,
     });
     items.push({ isSeparator: true });
     items.push({
       label: "Excluir",
       action: () => setItemToDelete(item),
       isDanger: true,
+       // <<< 8. Desabilitar "Excluir" se estiver a renomear este item >>>
+      disabled: isRenamingId === item.id,
     });
+    // Precisamos atualizar o ContextMenu.jsx para lidar com `disabled`
+    // (Por agora, vamos focar no FileSystemNode)
     return items;
   };
 
   const renderFolderOptions = (nodes, depth = 0) => {
-    let options = [];
+     // ... (código existente)
+      let options = [];
     nodes.forEach((node) => {
       if (node.type === "folder") {
         options.push(
@@ -352,7 +423,8 @@ export function DashboardPage() {
   };
 
   const handleTouchStart = (e, item) => {
-    e.stopPropagation();
+     // ... (código existente)
+      e.stopPropagation();
     const timeout = setTimeout(() => {
       setContextMenu({
         x: e.touches[0].clientX,
@@ -364,16 +436,22 @@ export function DashboardPage() {
   };
 
   const handleTouchEnd = (e) => {
-    e.stopPropagation();
+     // ... (código existente)
+      e.stopPropagation();
     if (touchTimeout) clearTimeout(touchTimeout);
     setTouchTimeout(null);
   };
 
+  // <<< 9. Atualizar FileSystemNode para usar 'isRenamingId' >>>
   const FileSystemNode = ({ node, depth }) => {
     const isEditing = editingItemId === node.id;
+    const isRenaming = isRenamingId === node.id; // <<< Verifica se ESTE item está a ser renomeado
+
     const handleContextMenu = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // Não abrir menu de contexto se estiver editando ou renomeando
+      if (isEditing || isRenaming) return; 
       setContextMenu({ x: e.clientX, y: e.clientY, item: node });
     };
 
@@ -382,12 +460,12 @@ export function DashboardPage() {
       return (
         <div>
           <div
-            className="flex items-center list-none p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700/50 cursor-pointer"
+            className={`flex items-center list-none p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700/50 ${isEditing || isRenaming ? "" : "cursor-pointer"}`}
             style={{ paddingLeft: `${depth * 20 + 4}px` }}
             onContextMenu={handleContextMenu}
-            onTouchStart={(e) => handleTouchStart(e, node)}
+            onTouchStart={(e) => (isEditing || isRenaming ? null : handleTouchStart(e, node))}
             onTouchEnd={handleTouchEnd}
-            onClick={() => !isEditing && toggleFolder(node.id)}
+            onClick={() => (isEditing || isRenaming ? null : toggleFolder(node.id))}
           >
             <span
               className={`w-4 h-4 transition-transform ${
@@ -400,31 +478,40 @@ export function DashboardPage() {
             {isEditing ? (
               <InlineEdit
                 initialValue={node.name}
-                onSave={handleRename}
+                onSave={handleRename} 
                 onCancel={() => setEditingItemId(null)}
               />
+            ) : isRenaming ? (
+               // <<< Estado de loading para renomear >>>
+              <span className="font-semibold ml-2 truncate opacity-50 italic">
+                A guardar...
+              </span>
             ) : (
               <span className="font-semibold ml-2 truncate">{node.name}</span>
             )}
           </div>
           {isOpen &&
             node.children?.map((child) => (
-              <FileSystemNode key={child.id} node={child} depth={depth + 1} />
+              <FileSystemNode
+                key={child.id}
+                node={child}
+                depth={depth + 1}
+                isRenamingId={isRenamingId} // <<< Passar prop para filhos
+              />
             ))}
         </div>
       );
     }
 
-    // --- CORREÇÃO DE ALINHAMENTO APLICADA ABAIXO ---
+    // Deck
     return (
       <div
-        className="flex items-center p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700/50"
-        // Aplica indentação base apenas se depth > 0
+        className={`flex items-center p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700/50 ${isRenaming ? "opacity-50" : ""}`}
         style={{
           paddingLeft: depth > 0 ? `${depth * 20 + 4 + 16 + 8}px` : "4px",
         }}
         onContextMenu={handleContextMenu}
-        onTouchStart={(e) => handleTouchStart(e, node)}
+        onTouchStart={(e) => (isEditing || isRenaming ? null : handleTouchStart(e, node))}
         onTouchEnd={handleTouchEnd}
       >
         <span className="mr-2 text-blue-400">🃏</span>
@@ -434,6 +521,11 @@ export function DashboardPage() {
             onSave={handleRename}
             onCancel={() => setEditingItemId(null)}
           />
+        ) : isRenaming ? (
+            // <<< Estado de loading para renomear >>>
+           <span className="truncate block w-full opacity-50 italic">
+             A guardar...
+           </span>
         ) : (
           <Link
             to={`/deck/${node.id}`}
@@ -446,11 +538,14 @@ export function DashboardPage() {
     );
   }; // Fim do FileSystemNode
 
+  // --- Renderização ---
   return (
     <div className="min-h-screen pb-8" onClick={() => setContextMenu(null)}>
       <main className="space-y-8">
+        {/* Bloco de Atividade */}
         <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+           {/* ... (código) ... */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
             <div>
               <h2 className="text-xl font-bold">Resumo de Atividade</h2>
               <Clock />
@@ -515,18 +610,28 @@ export function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Bloco de Decks/Pastas */}
           <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow min-h-[400px]">
             <GlobalSearch />
             <div className="mt-4">
               {loading ? (
                 <p>Carregando...</p>
+              ) : treeData.length === 0 ? (
+                 <p className="text-gray-500 dark:text-gray-400 text-center mt-8">Crie sua primeira pasta ou baralho no painel ao lado!</p>
               ) : (
                 treeData.map((node) => (
-                  <FileSystemNode key={node.id} node={node} depth={0} />
+                  <FileSystemNode 
+                    key={node.id} 
+                    node={node} 
+                    depth={0} 
+                    isRenamingId={isRenamingId} // <<< 10. Passar estado de loading
+                  />
                 ))
               )}
             </div>
           </div>
+          
+          {/* Bloco de Criação (Atualizado) */}
           <div
             className="lg:col-span-1 space-y-6"
             onClick={(e) => e.stopPropagation()}
@@ -542,7 +647,8 @@ export function DashboardPage() {
                   value={newItemName}
                   onChange={(e) => setNewItemName(e.target.value)}
                   placeholder="Ex: Biologia Celular"
-                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isCreating} 
+                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
                 />
               </div>
               <div className="mt-4">
@@ -552,29 +658,27 @@ export function DashboardPage() {
                 <select
                   value={newParentFolderId}
                   onChange={(e) => setNewParentFolderId(e.target.value)}
-                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isCreating} 
+                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
                 >
                   <option value="root">Raiz</option>
                   {renderFolderOptions(treeData)}
                 </select>
               </div>
-              {/* --- CORREÇÃO DAS CORES DOS BOTÕES APLICADA ABAIXO --- */}
               <div className="flex space-x-4 mt-6">
                 <button
                   onClick={(e) => handleCreate("deck", e)}
-                  disabled={isSubmitting || !newItemName}
-                  // Cor base para modo claro, cor para modo escuro, e sua correção de opacidade para desabilitado
-                  className="flex-1 bg-blue-800 hover:bg-blue-900 dark:bg-blue-700 dark:hover:bg-blue-800 text-white font-bold py-2 px-4 rounded-md disabled:opacity-90 transition-colors"
+                  disabled={isCreating || !newItemName} 
+                  className="flex-1 bg-blue-800 hover:bg-blue-900 dark:bg-blue-700 dark:hover:bg-blue-800 text-white font-bold py-2 px-4 rounded-md disabled:opacity-75 disabled:cursor-not-allowed transition-colors"
                 >
-                  Criar Baralho
+                  {isCreating ? "A criar..." : "Criar Baralho"}
                 </button>
                 <button
                   onClick={(e) => handleCreate("folder", e)}
-                  disabled={isSubmitting || !newItemName}
-                  // Cor base para modo claro, cor para modo escuro, e sua correção de opacidade para desabilitado
-                  className="flex-1 bg-amber-500 hover:bg-amber-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md disabled:opacity-90 transition-colors"
+                  disabled={isCreating || !newItemName}
+                  className="flex-1 bg-amber-500 hover:bg-amber-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md disabled:opacity-75 disabled:cursor-not-allowed transition-colors"
                 >
-                  Criar Pasta
+                  {isCreating ? "A criar..." : "Criar Pasta"}
                 </button>
               </div>
             </div>
@@ -582,18 +686,21 @@ export function DashboardPage() {
         </div>
       </main>
 
-      {contextMenu && (
+      {/* Context Menu (Sem alterações) */}
+       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          items={getContextMenuItems()}
+          items={getContextMenuItems()} // A função getContextMenuItems agora pode desabilitar itens
           onClose={() => setContextMenu(null)}
         />
       )}
+      {/* Confirmation Modal (Atualizado) */}
       <ConfirmationModal
         isOpen={!!itemToDelete}
         onClose={() => setItemToDelete(null)}
         onConfirm={handleDelete}
+        isConfirming={isDeleting} // Passa o estado
         title={`Excluir ${
           itemToDelete?.type === "folder" ? "Pasta" : "Baralho"
         }`}
@@ -603,10 +710,12 @@ export function DashboardPage() {
             : ""
         }`}
       />
+      {/* Move Modals (Atualizado) */}
       <MoveDeckModal
         isOpen={!!deckToMove}
         onClose={() => setDeckToMove(null)}
         onConfirm={handleMoveDeck}
+        isConfirming={isMoving} // <<< 11. Passar estado
         folders={folders}
         currentFolderId={deckToMove?.folder_id || null}
         deckName={deckToMove?.name || ""}
@@ -615,9 +724,11 @@ export function DashboardPage() {
         isOpen={!!folderToMove}
         onClose={() => setFolderToMove(null)}
         onConfirm={handleMoveFolder}
+        isConfirming={isMoving} // <<< 12. Passar estado
         allFolders={folders}
         folderToMove={folderToMove}
       />
+      {/* Daily Summary Modal (Sem alterações) */}
       <DailySummaryModal
         isOpen={!!selectedDate}
         onClose={() => setSelectedDate(null)}

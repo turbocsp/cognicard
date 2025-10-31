@@ -14,5 +14,8 @@
     }
   },
   "ignoreCommand": "node scripts/check-env.mjs",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
