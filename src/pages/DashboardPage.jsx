@@ -249,7 +249,7 @@ export function DashboardPage() {
     }
   };
 
-  // (handleMoveDeck / handleMoveFolder - Atualização Otimista Atrasada - sem alterações)
+  // (handleMoveDeck / handleMoveFolder ... sem alterações)
   const handleMoveDeck = async (itemToMove, newFolderId) => {
     if (!itemToMove) return;
     if (itemToMove.folder_id === newFolderId) {
@@ -602,8 +602,8 @@ export function DashboardPage() {
     setActiveDragItem(null);
   };
 
-  // <<< Início do FileSystemNode (CORREÇÃO DE ALINHAMENTO E ARQUITETURA) >>>
-  // A pasta é Draggable E Droppable (para o "hover-to-open")
+  // <<< Início do FileSystemNode >>>
+  // (Componente FileSystemNode sem alterações, ele já calcula o padding corretamente)
   const FileSystemNode = useCallback(
     ({ node, depth }) => {
       const isEditing = editingItemId === node.id;
@@ -618,7 +618,6 @@ export function DashboardPage() {
         setContextMenu({ x: e.clientX, y: e.clientY, item: node });
       };
 
-      // <<< CORREÇÃO ALINHAMENTO: Usar 24px (1.5rem) >>>
       const indentation = depth * 24;
 
       // --- Hooks DND-Kit ---
@@ -663,7 +662,6 @@ export function DashboardPage() {
           <div
             ref={setCombinedRef}
             style={style}
-            // A "cerca azul" só se aplica à pasta se ela estiver FECHADA
             className={`rounded-md ${
               isOver && !isOpen ? "dragging-over-folder" : ""
             }`}
@@ -675,7 +673,6 @@ export function DashboardPage() {
               className={`flex items-center list-none p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700/50 ${
                 isEditing || isDisabled ? "" : "cursor-pointer"
               }`}
-              // <<< CORREÇÃO ALINHAMENTO: Usar 'indentation' >>>
               style={{ paddingLeft: `${indentation}px` }}
               onContextMenu={handleContextMenu}
               onTouchStart={(e) =>
@@ -686,7 +683,6 @@ export function DashboardPage() {
                 isEditing || isDisabled ? null : toggleFolder(node.id)
               }
             >
-              {/* <<< CORREÇÃO ALINHAMENTO: Aumentar tamanho do ícone para 1.5rem (24px) >>> */}
               <span
                 className={`w-6 h-6 flex items-center justify-center transition-transform ${
                   isOpen ? "rotate-90" : ""
@@ -725,7 +721,6 @@ export function DashboardPage() {
                   // Mensagem de Pasta Vazia
                   <div
                     className="text-xs text-gray-400 p-2"
-                    // <<< CORREÇÃO ALINHAMENTO >>>
                     style={{ paddingLeft: `${(depth + 1) * 24}px` }}
                   >
                     (Pasta vazia)
@@ -751,8 +746,6 @@ export function DashboardPage() {
               isRenaming ? "opacity-50" : ""
             }`}
             style={{
-              // <<< CORREÇÃO DE ALINHAMENTO (O TEU PEDIDO) >>>
-              // O padding do Deck deve ser o mesmo da Pasta no mesmo nível
               paddingLeft: `${indentation}px`,
             }}
             onContextMenu={handleContextMenu}
@@ -805,7 +798,7 @@ export function DashboardPage() {
   );
   // <<< Fim do FileSystemNode >>>
 
-  // <<< CORREÇÃO DE ESPAÇO EXTRA (O TEU PEDIDO) >>>
+  // <<< CORREÇÃO 1 (ALINHAMENTO): Remover o marginLeft da DroppableArea >>>
   const DroppableArea = ({ id, depth = 0, children }) => {
     const { setNodeRef, isOver } = useDroppable({
       id: id,
@@ -813,7 +806,7 @@ export function DashboardPage() {
       data: { type: "folder" },
     });
 
-    const indentation = depth * 24; // <<< Usar 24px
+    // const indentation = depth * 24; // Esta indentação não é mais necessária aqui
 
     const isRoot = id === "root";
     const isRootAndEmpty = isRoot && treeData.length === 0;
@@ -821,16 +814,15 @@ export function DashboardPage() {
     return (
       <div
         ref={setNodeRef}
-        // <<< CORREÇÃO: Aplicar a "cerca azul" (isOver) >>>
         className={`
                 ${isOver ? "dragging-over-folder" : ""} 
                 rounded-md
             `}
         style={{
-          // <<< CORREÇÃO: Altura mínima SÓ se aplica à raiz vazia >>>
           minHeight: isRootAndEmpty ? "100px" : "auto",
-          // <<< CORREÇÃO: marginLeft SÓ se aplica a filhos (não à raiz) >>>
-          marginLeft: isRoot ? "0px" : `${indentation}px`,
+          // <<< CORREÇÃO (Problema 1): Remover o marginLeft.
+          // O FileSystemNode já controla o seu próprio padding-left.
+          marginLeft: "0px",
         }}
       >
         {children}
@@ -924,26 +916,24 @@ export function DashboardPage() {
                 onDragMove={handleDragMove}
                 onDragCancel={handleDragCancel}
               >
-                {/* O Droppable da Raiz (usando o componente helper) */}
+                {/* <<< CORREÇÃO 2 (ÁREA RAIZ): Movido o Título para DENTRO da DroppableArea >>> */}
                 <div className="mt-4">
-                  {/* <<< CORREÇÃO: Título "Baralhos" (Raiz) é o Droppable >>> */}
-                  <div
-                    // Aplicar estilos de "hover" se for a raiz (mesmo que não seja o componente DroppableArea)
-                    className={`
+                  <DroppableArea id="root" depth={0}>
+                    {/* O Título "Meus Baralhos" agora está DENTRO da área de drop */}
+                    <div
+                      className={`
                             text-lg font-semibold mb-2 p-1 rounded-md 
                             ${
-                              activeDragItem &&
-                              hoveredFolderIdRef.current === null
-                                ? "dragging-over-folder"
-                                : ""
+                              // Removemos a classe de hover manual, pois
+                              // a 'DroppableArea' agora aplica 'dragging-over-folder'
+                              // ao wrapper automaticamente quando 'isOver' é true.
+                              ""
                             }
                         `}
-                  >
-                    {/* Este é o Título que pediste */}
-                    Meus Baralhos
-                  </div>
+                    >
+                      Meus Baralhos
+                    </div>
 
-                  <DroppableArea id="root" depth={0}>
                     {treeData.map((node) => (
                       <FileSystemNode key={node.id} node={node} depth={0} />
                     ))}
@@ -958,11 +948,10 @@ export function DashboardPage() {
                   </DroppableArea>
                 </div>
 
-                {/* DragOverlay para o item flutuante */}
+                {/* DragOverlay (sem alterações) */}
                 <DragOverlay dropAnimation={null}>
                   {activeDragItem ? (
                     <div className="dragging-item-overlay">
-                      {/* <<< CORREÇÃO DE ALINHAMENTO NO OVERLAY >>> */}
                       {activeDragItem.type === "folder" ? (
                         <div
                           className="flex items-center list-none p-1 rounded-md"
