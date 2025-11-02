@@ -30,3 +30,16 @@
 .prose :where(code):not(:where([class~="not-prose"] *))::after {
   content: "";
 }
+
+/* <<< ESTILO PARA ÁREA DE DROP (dnd-kit) >>> */
+/* Adicionado quando estás a arrastar por cima de uma pasta ou da raiz */
+.dragging-over-folder {
+  @apply bg-blue-100 dark:bg-blue-900/50 rounded-md;
+  transition: background-color 0.2s ease;
+}
+
+/* <<< ESTILO PARA O ITEM FLUTUANTE (DragOverlay) >>> */
+.dragging-item-overlay {
+  @apply shadow-lg rounded-md bg-white dark:bg-gray-700 opacity-90 scale-105;
+  /* Isto faz com que o item que estás a arrastar pareça "flutuar" */
+}
