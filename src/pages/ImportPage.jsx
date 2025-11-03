@@ -1,16 +1,15 @@
 // src/pages/ImportPage.jsx
 import { useState, useRef, useCallback, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+// <<< 1. Importar 'Link' >>>
+import { useParams, useNavigate, Link } from "react-router-dom";
 import Papa from "papaparse";
 import { supabase } from "@/supabaseClient";
 import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
-
-// <<< 1. Importar useMutation e useQueryClient >>>
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+// ... (const TARGET_FIELDS = [...]) ...
 const TARGET_FIELDS = [
-  // ... (TARGET_FIELDS inalterado) ...
   { value: "ignore", label: "Ignorar esta coluna" },
   { value: "title", label: "Título do Cartão" },
   { value: "front_content", label: "Frente (Pergunta)" },
@@ -20,8 +19,8 @@ const TARGET_FIELDS = [
   { value: "tags", label: "Tags (separadas por vírgula)" },
 ];
 
+// ... (const DELIMITERS = [...]) ...
 const DELIMITERS = [
-  // ... (DELIMITERS inalterado) ...
   { value: "", label: "Automático" },
   { value: ",", label: "Vírgula (,)" },
   { value: ";", label: "Ponto e vírgula (;)" },
@@ -34,11 +33,9 @@ function ImportPage() {
   const navigate = useNavigate();
   const { session } = useAuth();
   const userId = session?.user?.id;
-
-  // <<< 2. Obter o Query Client >>>
   const queryClient = useQueryClient();
 
-  // --- Estados de UI ---
+  // ... (Todos os estados e mutações permanecem os mesmos) ...
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState("");
   const [delimiter, setDelimiter] = useState("");
@@ -47,14 +44,8 @@ function ImportPage() {
   const [step, setStep] = useState(1);
   const fullCsvData = useRef([]);
 
-  // --- 3. Remover estados de loading manuais ---
-  // [REMOVIDO] const [isAnalyzing, setIsAnalyzing] = useState(false);
-  // [REMOVIDO] const [isImporting, setIsImporting] = useState(false);
-
-  // --- 4. Criar a Mutação de Análise ---
   const analyzeMutation = useMutation({
     mutationFn: (fileToParse) => {
-      // O Papa.parse é baseado em callbacks, por isso "prometemos" ele
       return new Promise((resolve, reject) => {
         Papa.parse(fileToParse, {
           delimiter: delimiter,
@@ -64,9 +55,8 @@ function ImportPage() {
             const criticalErrors = results.errors.filter(
               (e) => e.code !== "TooManyFields" && e.code !== "TooFewFields"
             );
-
             if (criticalErrors.length > 0) {
-              return reject(criticalErrors[0]); // Rejeita a promessa com o erro
+              return reject(criticalErrors[0]);
             }
             if (results.meta.fields) {
               if (results.meta.fields.length < 2) {
@@ -76,7 +66,7 @@ function ImportPage() {
                   )
                 );
               }
-              resolve(results); // Resolve a promessa com os resultados
+              resolve(results);
             } else {
               return reject(
                 new Error(
@@ -86,13 +76,12 @@ function ImportPage() {
             }
           },
           error: (err) => {
-            reject(err); // Rejeita em caso de erro do PapaParse
+            reject(err);
           },
         });
       });
     },
     onSuccess: (results) => {
-      // A lógica do 'complete' do PapaParse vem para cá
       setHeaders(results.meta.fields);
       const initialMappings = {};
       results.meta.fields.forEach((field) => {
@@ -115,7 +104,6 @@ function ImportPage() {
       setStep(2);
     },
     onError: (error) => {
-      // A lógica do 'error' do PapaParse ou dos erros personalizados vem para cá
       const message = error.message || "Falha ao processar o arquivo.";
       toast.error(
         error.row ? `Erro na linha ${error.row}: ${message}` : message
@@ -124,7 +112,6 @@ function ImportPage() {
   });
 
   const handleFileChange = (e) => {
-    // ... (função inalterada)
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
     setFile(selectedFile);
@@ -135,25 +122,20 @@ function ImportPage() {
 
   const handleAnalyzeAndMap = () => {
     if (!file) return;
-    analyzeMutation.mutate(file); // Chama a mutação
+    analyzeMutation.mutate(file);
   };
 
-  // --- 5. Criar a Mutação de Importação ---
   const importMutation = useMutation({
     mutationFn: (cardsToInsert) => {
       return supabase.from("cards").insert(cardsToInsert);
     },
     onSuccess: (result, cardsToInsert) => {
-      if (result.error) throw result.error; // Lança o erro se o Supabase o retornar no objeto de sucesso
-
+      if (result.error) throw result.error;
       toast.success(`${cardsToInsert.length} cartões importados com sucesso!`);
-
-      // <<< 6. Invalidar os caches relevantes >>>
       queryClient.invalidateQueries({ queryKey: ["cards", deckId] });
       queryClient.invalidateQueries({
         queryKey: ["cardStats", deckId, userId],
       });
-
       navigate(`/deck/${deckId}`);
     },
     onError: (error) => {
@@ -163,7 +145,6 @@ function ImportPage() {
 
   const handleFinalImport = async () => {
     if (fullCsvData.current.length === 0 || !session) return;
-
     const mappedFields = Object.values(mappings);
     if (
       !mappedFields.includes("front_content") ||
@@ -174,7 +155,6 @@ function ImportPage() {
       );
       return;
     }
-
     const cardsToInsert = fullCsvData.current
       .map((row) => {
         const newCard = { deck_id: deckId, user_id: session.user.id };
@@ -203,26 +183,21 @@ function ImportPage() {
         return newCard;
       })
       .filter((card) => card !== null);
-
     if (cardsToInsert.length === 0) {
       toast.error(
         "Nenhum cartão válido para importar. Verifique o mapeamento e se as colunas de Frente e Verso têm conteúdo."
       );
       return;
     }
-
-    importMutation.mutate(cardsToInsert); // Chama a mutação
+    importMutation.mutate(cardsToInsert);
   };
 
-  // --- 7. Estados de Loading derivados das Mutações ---
   const isAnalyzing = analyzeMutation.isPending;
   const isImporting = importMutation.isPending;
-
   const usedFields = useMemo(
     () => new Set(Object.values(mappings)),
     [mappings]
   );
-
   const getAvailableFields = (currentField) => {
     return TARGET_FIELDS.filter(
       (field) =>
@@ -232,16 +207,26 @@ function ImportPage() {
     );
   };
 
-  // --- 8. Atualizar o JSX com os novos estados de loading ---
   return (
     <div className="min-h-screen">
       <header className="mb-8">
         <h1 className="text-3xl font-bold">Importar Cartões</h1>
       </header>
 
+      {/* <<< 2. ADICIONAR ESTE BLOCO >>> */}
+      <div className="mb-4">
+        <Link
+          to={`/deck/${deckId}`} // Usa o deckId para voltar
+          className="text-blue-500 hover:underline text-sm"
+        >
+          &larr; Voltar para o baralho
+        </Link>
+      </div>
+
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
         {step === 1 && (
           <div>
+            {/* ... (Restante do JSX do Passo 1 inalterado) ... */}
             <h2 className="text-xl font-semibold mb-4">
               Passo 1: Selecione o Arquivo e o Separador
             </h2>
@@ -250,7 +235,7 @@ function ImportPage() {
                 htmlFor="csv-upload"
                 className={`cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 inline-block ${
                   isAnalyzing ? "opacity-50 cursor-not-allowed" : ""
-                }`} // <<< Usa 'isAnalyzing'
+                }`}
               >
                 Escolher Arquivo (.csv ou .txt)
               </label>
@@ -260,13 +245,12 @@ function ImportPage() {
                 accept=".csv,.txt"
                 className="hidden"
                 onChange={handleFileChange}
-                disabled={isAnalyzing} // <<< Usa 'isAnalyzing'
+                disabled={isAnalyzing}
               />
               {fileName && (
                 <span className="ml-4 font-semibold">{fileName}</span>
               )}
             </div>
-
             {file && (
               <div className="my-6 border-t border-b py-6 dark:border-gray-700">
                 <h3 className="font-semibold mb-3">
@@ -280,7 +264,7 @@ function ImportPage() {
                         isAnalyzing
                           ? "cursor-not-allowed opacity-50"
                           : "cursor-pointer"
-                      }`} // <<< Usa 'isAnalyzing'
+                      }`}
                     >
                       <input
                         type="radio"
@@ -288,7 +272,7 @@ function ImportPage() {
                         value={d.value}
                         checked={delimiter === d.value}
                         onChange={(e) => setDelimiter(e.target.value)}
-                        disabled={isAnalyzing} // <<< Usa 'isAnalyzing'
+                        disabled={isAnalyzing}
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                       />
                       <span>{d.label}</span>
@@ -297,7 +281,7 @@ function ImportPage() {
                 </div>
                 <button
                   onClick={handleAnalyzeAndMap}
-                  disabled={isAnalyzing} // <<< Usa 'isAnalyzing'
+                  disabled={isAnalyzing}
                   className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-75 disabled:cursor-not-allowed"
                 >
                   {isAnalyzing ? "Analisando..." : "Analisar e Mapear Colunas"}
@@ -309,6 +293,7 @@ function ImportPage() {
 
         {step === 2 && (
           <div>
+            {/* ... (Restante do JSX do Passo 2 inalterado) ... */}
             <h2 className="text-xl font-semibold mb-4">
               Passo 2: Mapeie as Colunas
             </h2>
@@ -337,7 +322,7 @@ function ImportPage() {
                           [header]: e.target.value,
                         }))
                       }
-                      disabled={isImporting} // <<< Usa 'isImporting'
+                      disabled={isImporting}
                       className="w-full px-3 py-2 border rounded-md bg-gray-200 text-black dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                     >
                       {availableFields.map((field) => (
@@ -353,14 +338,14 @@ function ImportPage() {
             <div className="flex justify-between mt-6">
               <button
                 onClick={() => setStep(1)}
-                disabled={isImporting} // <<< Usa 'isImporting'
+                disabled={isImporting}
                 className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-50"
               >
                 Voltar
               </button>
               <button
                 onClick={handleFinalImport}
-                disabled={isImporting} // <<< Usa 'isImporting'
+                disabled={isImporting}
                 className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-75 disabled:cursor-not-allowed"
               >
                 {isImporting ? "A importar..." : `Finalizar Importação`}

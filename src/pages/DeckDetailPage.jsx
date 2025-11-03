@@ -1,5 +1,5 @@
 // src/pages/DeckDetailPage.jsx
-import { useState, useEffect, useCallback, useMemo } from "react"; // <<< useEffect e useCallback removidos da busca
+import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/supabaseClient";
 import { useAuth } from "@/AuthContext";
@@ -9,23 +9,16 @@ import { ConfirmationModal } from "@/components/ConfirmationModal.jsx";
 import { MarkdownGuideModal } from "@/components/MarkdownGuideModal.jsx";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-// <<< 1. Importar os hooks do TanStack Query >>>
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-
-// (Serviços não são mais estritamente necessários aqui, mas podemos mantê-los se preferir)
-// Vamos chamar o supabase diretamente ou os serviços, se eles existirem (como no deckService)
 import deckService from "../services/deckService";
 
 function DeckDetailPage() {
   const { deckId } = useParams();
   const { session } = useAuth();
   const userId = session?.user?.id;
-
-  // <<< 2. Obter o Query Client >>>
   const queryClient = useQueryClient();
 
-  // --- Estados de UI (não são dados do servidor) ---
+  // --- Estados de UI ---
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [newCard, setNewCard] = useState({
     title: "",
@@ -37,41 +30,25 @@ function DeckDetailPage() {
   });
   const [cardToDelete, setCardToDelete] = useState(null);
   const [cardToEdit, setCardToEdit] = useState(null);
+  const [isConfirmingDeleteAll, setIsConfirmingDeleteAll] = useState(false);
 
-  // --- 3. Remover estados de dados manuais ---
-  // [REMOVIDO] const [deck, setDeck] = useState(null);
-  // [REMOVIDO] const [cards, setCards] = useState([]);
-  // [REMOVIDO] const [cardStats, setCardStats] = useState({});
-  // [REMOVIDO] const [loading, setLoading] = useState(true);
-  // [REMOVIDO] const [isCreatingCard, setIsCreatingCard] = useState(false);
-  // [REMOVIDO] const [isDeletingCard, setIsDeletingCard] = useState(false);
-  // [REMOVIDO] const [isSavingCard, setIsSavingCard] = useState(false);
-
-  // [REMOVIDO] const fetchDeckData = useCallback(...);
-  // [REMOVIDO] useEffect(() => { fetchDeckData(); }, [fetchDeckData]);
-
-  // --- 4. Usar useQuery para buscar dados ---
-
-  // Query para os detalhes do baralho
+  // --- useQuery (Inalterado) ---
   const { data: deck, isLoading: isLoadingDeck } = useQuery({
     queryKey: ["deck", deckId],
-    queryFn: () => deckService.getDeck(deckId), //
+    queryFn: () => deckService.getDeck(deckId),
     enabled: !!deckId,
   });
 
-  // Query para a lista de cartões
   const { data: cards = [], isLoading: isLoadingCards } = useQuery({
     queryKey: ["cards", deckId],
-    queryFn: () => deckService.getDeckCards(deckId), //
+    queryFn: () => deckService.getDeckCards(deckId),
     enabled: !!deckId,
   });
 
-  // Query para as estatísticas dos cartões
   const { data: statsData = [], isLoading: isLoadingStats } = useQuery({
     queryKey: ["cardStats", deckId, userId],
     queryFn: async () => {
       const { data, error } = await supabase.rpc("get_card_statistics", {
-        //
         p_deck_id: deckId,
         p_user_id: userId,
       });
@@ -85,10 +62,8 @@ function DeckDetailPage() {
     enabled: !!deckId && !!userId,
   });
 
-  // Estado de loading combinado
   const loading = isLoadingDeck || isLoadingCards || isLoadingStats;
 
-  // Derivar o statsMap dos dados carregados (usando useMemo)
   const cardStats = useMemo(() => {
     return (statsData || []).reduce((acc, stat) => {
       acc[stat.card_id] = stat;
@@ -96,21 +71,17 @@ function DeckDetailPage() {
     }, {});
   }, [statsData]);
 
-  // --- 5. Helper para invalidar caches ---
+  // --- Mutações (Inalteradas) ---
   const invalidateDeckCache = () => {
-    // Quando um cartão é alterado, buscamos novamente a lista de cartões E as estatísticas
     queryClient.invalidateQueries({ queryKey: ["cards", deckId] });
     queryClient.invalidateQueries({ queryKey: ["cardStats", deckId, userId] });
   };
-
-  // --- 6. Usar useMutation para CUD (Create, Update, Delete) ---
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setNewCard((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Mutação para CRIAR cartão
   const createCardMutation = useMutation({
     mutationFn: (cardData) => {
       return supabase.from("cards").insert(cardData);
@@ -118,7 +89,6 @@ function DeckDetailPage() {
     onSuccess: () => {
       toast.success("Cartão adicionado com sucesso!");
       setNewCard({
-        // Limpar formulário
         title: "",
         front_content: "",
         back_content: "",
@@ -126,7 +96,7 @@ function DeckDetailPage() {
         source_references: "",
         tags: "",
       });
-      invalidateDeckCache(); // Atualizar UI
+      invalidateDeckCache();
     },
     onError: (error) => {
       toast.error(error.message);
@@ -136,7 +106,6 @@ function DeckDetailPage() {
   const handleCreateCard = async (e) => {
     e.preventDefault();
     if (!newCard.front_content.trim() || !newCard.back_content.trim()) return;
-
     const cardData = {
       deck_id: deckId,
       user_id: session.user.id,
@@ -156,7 +125,6 @@ function DeckDetailPage() {
     createCardMutation.mutate(cardData);
   };
 
-  // Mutação para EDITAR cartão
   const saveCardMutation = useMutation({
     mutationFn: (updatedCard) => {
       return supabase
@@ -174,14 +142,13 @@ function DeckDetailPage() {
     onSuccess: () => {
       toast.success("Cartão atualizado com sucesso!");
       invalidateDeckCache();
-      setCardToEdit(null); // Fechar modal
+      setCardToEdit(null);
     },
     onError: (error) => {
       toast.error(`Erro ao salvar alterações: ${error.message}`);
     },
   });
 
-  // Mutação para EXCLUIR cartão
   const deleteCardMutation = useMutation({
     mutationFn: (cardId) => {
       return supabase.from("cards").delete().eq("id", cardId);
@@ -189,7 +156,7 @@ function DeckDetailPage() {
     onSuccess: () => {
       toast.success("Cartão excluído com sucesso.");
       invalidateDeckCache();
-      setCardToDelete(null); // Fechar modal
+      setCardToDelete(null);
     },
     onError: (error) => {
       toast.error(`Erro ao excluir cartão: ${error.message}`);
@@ -201,7 +168,20 @@ function DeckDetailPage() {
     deleteCardMutation.mutate(cardToDelete.id);
   };
 
-  // --- 7. Renderização (usando os novos estados) ---
+  const deleteAllCardsMutation = useMutation({
+    mutationFn: () => {
+      return supabase.rpc("delete_all_cards_from_deck", { p_deck_id: deckId });
+    },
+    onSuccess: () => {
+      toast.success("Todos os cartões foram apagados.");
+      invalidateDeckCache();
+      setIsConfirmingDeleteAll(false);
+    },
+    onError: (error) => {
+      toast.error(`Erro ao apagar cartões: ${error.message}`);
+      setIsConfirmingDeleteAll(false);
+    },
+  });
 
   if (loading)
     return (
@@ -215,9 +195,6 @@ function DeckDetailPage() {
         Baralho não encontrado.
       </div>
     );
-
-  // O componente agora usa 'deck' e 'cards' diretamente dos hooks useQuery
-  // E passa os estados 'isPending' das mutações para os modais e formulários
 
   return (
     <div className="min-h-screen pb-12">
@@ -237,6 +214,15 @@ function DeckDetailPage() {
             >
               Importar Cartões
             </Link>
+            {cards.length > 0 && (
+              <button
+                onClick={() => setIsConfirmingDeleteAll(true)}
+                disabled={deleteAllCardsMutation.isPending}
+                className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md transition text-center disabled:opacity-50"
+              >
+                Apagar Todos os Cartões
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -244,6 +230,7 @@ function DeckDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1">
           <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow sticky top-24">
+            {/* ... (Formulário de "Adicionar Novo Cartão" inalterado) ... */}
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">Adicionar Novo Cartão</h2>
               <button
@@ -253,7 +240,6 @@ function DeckDetailPage() {
                 Guia de Formatação
               </button>
             </div>
-            {/* <<< 8. Usar createCardMutation.isPending >>> */}
             <form onSubmit={handleCreateCard} className="space-y-4">
               <div>
                 <label
@@ -268,7 +254,7 @@ function DeckDetailPage() {
                   id="title"
                   value={newCard.title}
                   onChange={handleInputChange}
-                  disabled={createCardMutation.isPending} // <<< Alterado
+                  disabled={createCardMutation.isPending}
                   className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
@@ -285,7 +271,7 @@ function DeckDetailPage() {
                   value={newCard.front_content}
                   onChange={handleInputChange}
                   rows={3}
-                  disabled={createCardMutation.isPending} // <<< Alterado
+                  disabled={createCardMutation.isPending}
                   className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                   required
                 />
@@ -303,7 +289,7 @@ function DeckDetailPage() {
                   value={newCard.back_content}
                   onChange={handleInputChange}
                   rows={3}
-                  disabled={createCardMutation.isPending} // <<< Alterado
+                  disabled={createCardMutation.isPending}
                   className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                   required
                 />
@@ -321,7 +307,7 @@ function DeckDetailPage() {
                   value={newCard.theory_notes}
                   onChange={handleInputChange}
                   rows={2}
-                  disabled={createCardMutation.isPending} // <<< Alterado
+                  disabled={createCardMutation.isPending}
                   className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
@@ -338,7 +324,7 @@ function DeckDetailPage() {
                   id="source_references"
                   value={newCard.source_references}
                   onChange={handleInputChange}
-                  disabled={createCardMutation.isPending} // <<< Alterado
+                  disabled={createCardMutation.isPending}
                   className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
@@ -355,13 +341,13 @@ function DeckDetailPage() {
                   id="tags"
                   value={newCard.tags}
                   onChange={handleInputChange}
-                  disabled={createCardMutation.isPending} // <<< Alterado
+                  disabled={createCardMutation.isPending}
                   className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
               <button
                 type="submit"
-                disabled={createCardMutation.isPending} // <<< Alterado
+                disabled={createCardMutation.isPending}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition disabled:opacity-75 disabled:bg-blue-400 disabled:cursor-not-allowed"
               >
                 {createCardMutation.isPending
@@ -391,13 +377,14 @@ function DeckDetailPage() {
                     <button
                       onClick={() => setCardToEdit(card)}
                       title="Editar"
-                      // <<< 9. Usar estados 'isPending' das mutações >>>
                       disabled={
                         deleteCardMutation.isPending ||
-                        saveCardMutation.isPending
+                        saveCardMutation.isPending ||
+                        deleteAllCardsMutation.isPending
                       }
                       className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full disabled:opacity-25"
                     >
+                      {/* <<< CORREÇÃO AQUI >>> */}
                       <svg
                         className="w-5 h-5 text-gray-500"
                         fill="none"
@@ -415,13 +402,14 @@ function DeckDetailPage() {
                     <button
                       onClick={() => setCardToDelete(card)}
                       title="Excluir"
-                      // <<< 9. Usar estados 'isPending' das mutações >>>
                       disabled={
                         deleteCardMutation.isPending ||
-                        saveCardMutation.isPending
+                        saveCardMutation.isPending ||
+                        deleteAllCardsMutation.isPending
                       }
                       className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full disabled:opacity-25"
                     >
+                      {/* <<< CORREÇÃO AQUI >>> */}
                       <svg
                         className="w-5 h-5 text-red-500"
                         fill="none"
@@ -453,7 +441,6 @@ function DeckDetailPage() {
                       </ReactMarkdown>
                     </div>
                   </div>
-                  {/* Usa 'cardStats' (do useMemo) */}
                   {(cardStats[card.id]?.total_views > 0 ||
                     (card.tags && card.tags.length > 0)) && (
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
@@ -502,20 +489,30 @@ function DeckDetailPage() {
         </div>
       </div>
 
-      {/* <<< 10. Passar os estados 'isPending' para os modais >>> */}
+      {/* Modais (Inalterados) */}
       <ConfirmationModal
         isOpen={!!cardToDelete}
         onClose={() => setCardToDelete(null)}
         onConfirm={handleDeleteCard}
-        isConfirming={deleteCardMutation.isPending} // <<< Alterado
+        isConfirming={deleteCardMutation.isPending}
         title="Confirmar Exclusão de Cartão"
         message="Tem certeza que deseja excluir este cartão? Esta ação não pode ser desfeita."
       />
+
+      <ConfirmationModal
+        isOpen={isConfirmingDeleteAll}
+        onClose={() => setIsConfirmingDeleteAll(false)}
+        onConfirm={() => deleteAllCardsMutation.mutate()}
+        isConfirming={deleteAllCardsMutation.isPending}
+        title="Apagar Todos os Cartões"
+        message={`Tem certeza que deseja apagar todos os ${cards.length} cartões deste baralho? Esta ação não pode ser desfeita.`}
+      />
+
       <CardEditModal
         isOpen={!!cardToEdit}
         onClose={() => setCardToEdit(null)}
-        onSave={saveCardMutation.mutate} // <<< Passa a função 'mutate' diretamente
-        isSaving={saveCardMutation.isPending} // <<< Alterado
+        onSave={saveCardMutation.mutate}
+        isSaving={saveCardMutation.isPending}
         card={cardToEdit}
       />
       <MarkdownGuideModal
