@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+// src/pages/StatsPage.jsx
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/supabaseClient";
 import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
@@ -13,82 +14,125 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+import { useQuery } from "@tanstack/react-query";
+// Vamos precisar dos dois serviços para obter os dados do cache
+import deckService from "@/services/deckService";
+import folderService from "@/services/folderService";
+
 function StatsPage() {
   const { session } = useAuth();
-  const [decks, setDecks] = useState([]);
+  const userId = session?.user?.id;
   const [selectedDeckId, setSelectedDeckId] = useState("");
-  const [stats, setStats] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingStats, setLoadingStats] = useState(false);
 
-  useEffect(() => {
-    const fetchDecks = async () => {
-      if (!session) return;
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("decks")
-        .select("id, name")
-        .eq("user_id", session.user.id);
+  // --- useQuery para buscar Baralhos (Decks) ---
+  const { data: decks = [], isLoading: isLoadingDecks } = useQuery({
+    queryKey: ["decks", userId],
+    queryFn: () => deckService.getUserDecks(userId), //
+    enabled: !!userId,
+  });
 
-      if (error) {
-        toast.error("Erro ao buscar seus baralhos.");
-      } else {
-        setDecks(data);
-        if (data.length > 0) {
-          setSelectedDeckId(data[0].id);
-        }
+  // --- useQuery para buscar Pastas (Folders) ---
+  const { data: folders = [], isLoading: isLoadingFolders } = useQuery({
+    queryKey: ["folders", userId],
+    queryFn: () => folderService.getUserFolders(userId), //
+    enabled: !!userId,
+  });
+
+  // <<< ATUALIZAÇÃO PRINCIPAL (useMemo) >>>
+  // --- Criar a lista de exibição com o caminho completo ---
+  const deckDisplayList = useMemo(() => {
+    // 1. Criar um mapa para acesso rápido às pastas por ID
+    const folderMap = new Map(folders.map((f) => [f.id, f]));
+
+    // 2. Função auxiliar recursiva para construir o caminho
+    const getFolderPath = (folderId) => {
+      let path = [];
+      let currentFolder = folderMap.get(folderId);
+
+      // Navega "para cima" na árvore até a raiz (limite de 10 níveis para evitar loops)
+      let safetyCounter = 0;
+      while (currentFolder && safetyCounter < 10) {
+        path.unshift(currentFolder.name); // Adiciona o nome no início
+        currentFolder = folderMap.get(currentFolder.parent_folder_id);
+        safetyCounter++;
       }
-      setLoading(false);
+      return path.join(" / "); // Retorna "PastaMae / PastaFilha"
     };
-    fetchDecks();
-  }, [session]);
 
+    // 3. Mapear os baralhos para a lista de exibição
+    return (
+      decks
+        .map((deck) => {
+          const path = getFolderPath(deck.folder_id);
+          const displayName = path
+            ? `${path} / ${deck.name}` // Ex: "Química / Tabela Periódica"
+            : deck.name; // Ex: "Baralho Raiz"
+
+          return {
+            id: deck.id,
+            displayName: displayName,
+          };
+        })
+        // 4. Ordenar alfabeticamente pelo nome de exibição completo
+        .sort((a, b) =>
+          a.displayName.localeCompare(b.displayName, "pt-BR", {
+            sensitivity: "base",
+          })
+        )
+    );
+  }, [decks, folders]); // Recalcula se os decks ou as pastas mudarem
+
+  // --- Efeito para selecionar o primeiro baralho (Inalterado) ---
   useEffect(() => {
-    const fetchStats = async () => {
-      if (!selectedDeckId || !session) {
-        setStats([]);
-        return;
-      }
-      setLoadingStats(true);
+    if (!selectedDeckId && deckDisplayList.length > 0) {
+      setSelectedDeckId(deckDisplayList[0].id);
+    }
+  }, [deckDisplayList, selectedDeckId]);
+
+  // --- useQuery para buscar Estatísticas (Inalterado) ---
+  const { data: rawStatsData = [], isLoading: isLoadingStats } = useQuery({
+    queryKey: ["deckStats", selectedDeckId, userId],
+    queryFn: async () => {
       const { data, error } = await supabase.rpc("get_deck_statistics", {
         p_deck_id: selectedDeckId,
-        p_user_id: session.user.id,
+        p_user_id: userId,
       });
-
       if (error) {
         toast.error("Erro ao buscar estatísticas do baralho.");
-        setStats([]);
-      } else {
-        const uniqueAttempts = new Map();
-        data.forEach((item) => {
-          uniqueAttempts.set(item.attempt_number, item);
-        });
-
-        const processedData = Array.from(uniqueAttempts.values())
-          .map((item) => ({
-            ...item,
-            total_cards: item.correct_count + item.incorrect_count,
-            accuracy:
-              item.correct_count + item.incorrect_count > 0
-                ? parseFloat(
-                    (
-                      (item.correct_count /
-                        (item.correct_count + item.incorrect_count)) *
-                      100
-                    ).toFixed(2)
-                  )
-                : 0,
-          }))
-          .sort((a, b) => a.attempt_number - b.attempt_number);
-        setStats(processedData);
+        throw error;
       }
-      setLoadingStats(false);
-    };
+      return data || [];
+    },
+    enabled: !!selectedDeckId && !!userId,
+  });
 
-    fetchStats();
-  }, [selectedDeckId, session]);
+  // --- useMemo para processar Estatísticas (Inalterado) ---
+  const stats = useMemo(() => {
+    const uniqueAttempts = new Map();
+    rawStatsData.forEach((item) => {
+      uniqueAttempts.set(item.attempt_number, item);
+    });
 
-  if (loading) {
+    return Array.from(uniqueAttempts.values())
+      .map((item) => ({
+        ...item,
+        total_cards: item.correct_count + item.incorrect_count,
+        accuracy:
+          item.correct_count + item.incorrect_count > 0
+            ? parseFloat(
+                (
+                  (item.correct_count /
+                    (item.correct_count + item.incorrect_count)) *
+                  100
+                ).toFixed(2)
+              )
+            : 0,
+      }))
+      .sort((a, b) => a.attempt_number - b.attempt_number);
+  }, [rawStatsData]);
+
+  // --- Renderização ---
+  if (isLoadingDecks || isLoadingFolders) {
     return (
       <div className="p-8 text-center text-gray-900 dark:text-white">
         Carregando seus baralhos...
@@ -111,12 +155,13 @@ function StatsPage() {
           value={selectedDeckId}
           onChange={(e) => setSelectedDeckId(e.target.value)}
           className="w-full max-w-sm p-2 border rounded-md bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          disabled={decks.length === 0}
+          disabled={deckDisplayList.length === 0 || isLoadingStats}
         >
-          {decks.length > 0 ? (
-            decks.map((deck) => (
+          {deckDisplayList.length > 0 ? (
+            // <<< ATUALIZADO: Renderiza o displayName completo >>>
+            deckDisplayList.map((deck) => (
               <option key={deck.id} value={deck.id}>
-                {deck.name}
+                {deck.displayName}
               </option>
             ))
           ) : (
@@ -125,7 +170,8 @@ function StatsPage() {
         </select>
       </div>
 
-      {loadingStats ? (
+      {/* O restante do JSX (tabela e gráficos) permanece o mesmo */}
+      {isLoadingStats ? (
         <p className="text-center">Carregando estatísticas...</p>
       ) : stats.length > 0 ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+// src/pages/DashboardPage.jsx
+import { useState, useCallback, useRef, useMemo } from "react";
 import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
@@ -12,104 +13,99 @@ import ActivityCalendar from "@/components/ActivityCalendar";
 import DailySummaryModal from "@/components/DailySummaryModal";
 import Clock from "@/components/Clock";
 
+// <<< ERRO 1 CORRIGIDO: Imports do DND-Kit restaurados >>>
 import {
   DndContext,
   PointerSensor,
   useSensor,
-  useSensors,
+  useSensors, // <--- ESTAVA FALTANDO
   DragOverlay,
   useDraggable,
   useDroppable,
 } from "@dnd-kit/core";
 
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
 import deckService from "@/services/deckService";
 import folderService from "@/services/folderService";
 import { supabase } from "@/supabaseClient";
 
-const HOVER_TO_OPEN_DELAY = 500; // 0.5 segundos
+const HOVER_TO_OPEN_DELAY = 500;
 
 export function DashboardPage() {
   const { session } = useAuth();
+  const userId = session?.user?.id;
+  const currentYear = new Date().getFullYear();
+  const queryClient = useQueryClient();
 
-  // (Estados... sem alterações)
-  const [decks, setDecks] = useState([]);
-  const [folders, setFolders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [treeData, setTreeData] = useState([]);
+  // --- Estados de UI ---
   const [newItemName, setNewItemName] = useState("");
   const [newParentFolderId, setNewParentFolderId] = useState("root");
-
-  const [isCreating, setIsCreating] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isMoving, setIsMoving] = useState(false);
-  const [isRenamingId, setIsRenamingId] = useState(null);
-  const isDisabled = isMoving || isDeleting || !!isRenamingId;
-
   const [itemToDelete, setItemToDelete] = useState(null);
   const [deckToMove, setDeckToMove] = useState(null);
   const [folderToMove, setFolderToMove] = useState(null);
   const [editingItemId, setEditingItemId] = useState(null);
+  const [isRenamingId, setIsRenamingId] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [openFolders, setOpenFolders] = useState(new Set());
   const [touchTimeout, setTouchTimeout] = useState(null);
-  const [streakData, setStreakData] = useState({
-    current_streak: 0,
-    longest_streak: 0,
-  });
-  const [activityData, setActivityData] = useState([]);
   const [activityView, setActivityView] = useState("week");
-  const [currentYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState(null);
-
   const [activeDragItem, setActiveDragItem] = useState(null);
   const hoverTimerRef = useRef(null);
   const hoveredFolderIdRef = useRef(null);
 
-  // (Função fetchDashboardData, useEffects... sem alterações)
-  const fetchDashboardData = useCallback(async () => {
-    if (!session?.user?.id) return;
-    setLoading(true);
-    try {
-      const [deckData, folderData, streakResult, activityResult] =
-        await Promise.all([
-          deckService.getUserDecks(session.user.id),
-          folderService.getUserFolders(session.user.id),
-          supabase
-            .rpc("get_study_streak", { p_user_id: session.user.id })
-            .single(),
-          supabase.rpc("get_study_activity", {
-            p_user_id: session.user.id,
-            p_year: currentYear,
-          }),
-        ]);
-      setDecks(deckData);
-      setFolders(folderData);
-      if (streakResult.error)
-        toast.error(`Streak Error: ${streakResult.error.message}`);
-      else if (streakResult.data) setStreakData(streakResult.data);
-      if (activityResult.error)
-        toast.error(`Activity Error: ${activityResult.error.message}`);
-      else setActivityData(activityResult.data || []);
-    } catch (error) {
-      toast.error(error.message || "Erro ao carregar dados do painel.");
-      setDecks([]);
-      setFolders([]);
-      setStreakData({ current_streak: 0, longest_streak: 0 });
-      setActivityData([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [session, currentYear]);
+  // --- Busca de Dados (useQuery) ---
+  const { data: folders = [], isLoading: isLoadingFolders } = useQuery({
+    queryKey: ["folders", userId],
+    queryFn: () => folderService.getUserFolders(userId),
+    enabled: !!userId,
+  });
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+  const { data: decks = [], isLoading: isLoadingDecks } = useQuery({
+    queryKey: ["decks", userId],
+    queryFn: () => deckService.getUserDecks(userId),
+    enabled: !!userId,
+  });
 
-  useEffect(() => {
-    const buildTree = (folders, decks) => {
+  // <<< ERRO 2 CORRIGIDO: queryFn preenchida >>>
+  const { data: streakData = { current_streak: 0, longest_streak: 0 } } =
+    useQuery({
+      queryKey: ["streak", userId],
+      queryFn: async () => {
+        // <-- Função estava em falta
+        const { data, error } = await supabase
+          .rpc("get_study_streak", { p_user_id: userId })
+          .single();
+        if (error) throw error;
+        return data;
+      },
+      enabled: !!userId,
+    });
+
+  // <<< ERRO 2 CORRIGIDO: queryFn preenchida >>>
+  const { data: activityData = [] } = useQuery({
+    queryKey: ["activity", userId, currentYear],
+    queryFn: async () => {
+      // <-- Função estava em falta
+      const { data, error } = await supabase.rpc("get_study_activity", {
+        p_user_id: userId,
+        p_year: currentYear,
+      });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!userId,
+  });
+
+  const loading = isLoadingFolders || isLoadingDecks;
+
+  // --- Estado Derivado (useMemo) ---
+  const treeData = useMemo(() => {
+    const buildTree = (foldersData, decksData) => {
       const nodeMap = new Map();
       const tree = [];
-      folders.forEach((folder) => {
+      foldersData.forEach((folder) => {
         nodeMap.set(folder.id, {
           id: folder.id,
           name: folder.name,
@@ -118,7 +114,7 @@ export function DashboardPage() {
           data: folder,
         });
       });
-      decks.forEach((deck) => {
+      decksData.forEach((deck) => {
         nodeMap.set(deck.id, {
           id: deck.id,
           name: deck.name,
@@ -149,11 +145,48 @@ export function DashboardPage() {
       tree.sort(sortNodes);
       return tree;
     };
-    setTreeData(buildTree(folders, decks));
+    return buildTree(folders, decks);
   }, [folders, decks]);
 
-  // (handleCreate, handleRename... sem alterações)
-  const handleCreate = async (type, e) => {
+  // --- Mutações (useMutation) ---
+
+  const invalidateDashboardCache = () => {
+    queryClient.invalidateQueries({ queryKey: ["folders", userId] });
+    queryClient.invalidateQueries({ queryKey: ["decks", userId] });
+  };
+
+  const createItemMutation = useMutation({
+    mutationFn: async ({ type, payload }) => {
+      if (type === "deck") {
+        return deckService.createDeck(payload);
+      } else {
+        return folderService.createFolder(payload);
+      }
+    },
+    onSuccess: (data, { type }) => {
+      toast.success(
+        `${type === "deck" ? "Baralho" : "Pasta"} criado com sucesso!`
+      );
+      invalidateDashboardCache();
+      setNewItemName("");
+      const parentId = data.folder_id || data.parent_folder_id;
+      if (parentId) setOpenFolders((prev) => new Set(prev).add(parentId));
+    },
+    onError: (error, { type }) => {
+      if (error?.code === "23505") {
+        toast.error(
+          `Já existe ${
+            type === "deck" ? "um baralho" : "uma pasta"
+          } com este nome neste local.`
+        );
+      } else {
+        toast.error(error.message || `Erro ao criar ${type}.`);
+      }
+    },
+  });
+  const isCreating = createItemMutation.isPending;
+
+  const handleCreate = (type, e) => {
     e.preventDefault();
     e.stopPropagation();
     const trimmedName = newItemName.trim();
@@ -161,39 +194,52 @@ export function DashboardPage() {
       toast.error("O nome não pode estar vazio.");
       return;
     }
+
     const parentId = newParentFolderId === "root" ? null : newParentFolderId;
+
     const siblings =
       type === "folder"
         ? folders.filter((f) => f.parent_folder_id === parentId)
         : decks.filter((d) => d.folder_id === parentId);
+
     if (
       siblings.some((s) => s.name.toLowerCase() === trimmedName.toLowerCase())
     ) {
       toast.error(`Já existe um item com o nome "${trimmedName}" neste local.`);
       return;
     }
-    setIsCreating(true);
+
     const payload = { name: trimmedName, user_id: session.user.id };
     if (type === "deck") payload.folder_id = parentId;
     if (type === "folder") payload.parent_folder_id = parentId;
-    try {
-      if (type === "deck") {
-        await deckService.createDeck(payload);
-      } else {
-        await folderService.createFolder(payload);
-      }
-      toast.success(
-        `${type === "deck" ? "Baralho" : "Pasta"} criado com sucesso!`
-      );
-      setNewItemName("");
-      if (parentId) setOpenFolders((prev) => new Set(prev).add(parentId));
-      fetchDashboardData();
-    } catch (error) {
-      toast.error(error.message || `Erro ao criar ${type}.`);
-    } finally {
-      setIsCreating(false);
-    }
+
+    createItemMutation.mutate({ type, payload });
   };
+
+  const renameMutation = useMutation({
+    mutationFn: async ({ id, newName, type }) => {
+      if (type === "deck") {
+        return deckService.renameDeck(id, newName);
+      } else {
+        return folderService.renameFolder(id, newName);
+      }
+    },
+    onSuccess: () => {
+      toast.success("Renomeado com sucesso!");
+      invalidateDashboardCache();
+    },
+    onError: (error) => {
+      if (error?.code === "23505") {
+        toast.error("Um item com este nome já existe neste local.");
+      } else {
+        toast.error(error.message || "Erro ao renomear.");
+      }
+    },
+    onSettled: () => {
+      setIsRenamingId(null);
+      setEditingItemId(null);
+    },
+  });
 
   const handleRename = async (newName) => {
     const trimmedNewName = newName.trim();
@@ -208,14 +254,17 @@ export function DashboardPage() {
       setEditingItemId(null);
       return;
     }
+
     const type = "parent_folder_id" in item ? "folder" : "deck";
     const parentId = type === "folder" ? item.parent_folder_id : item.folder_id;
+
     const siblingFolders = folders.filter(
       (f) => f.parent_folder_id === parentId && f.id !== editingItemId
     );
     const siblingDecks = decks.filter(
       (d) => d.folder_id === parentId && d.id !== editingItemId
     );
+
     if (
       (type === "folder" &&
         siblingFolders.some(
@@ -231,31 +280,46 @@ export function DashboardPage() {
       );
       return;
     }
+
     setIsRenamingId(editingItemId);
     setEditingItemId(null);
     setContextMenu(null);
-    try {
-      if (type === "deck") {
-        await deckService.renameDeck(editingItemId, trimmedNewName);
-      } else {
-        await folderService.renameFolder(editingItemId, trimmedNewName);
-      }
-      toast.success("Renomeado com sucesso!");
-      fetchDashboardData();
-    } catch (error) {
-      toast.error(error.message || "Erro ao renomear.");
-    } finally {
-      setIsRenamingId(null);
-    }
+
+    renameMutation.mutate({ type, id: editingItemId, newName: trimmedNewName });
   };
 
-  // (handleMoveDeck / handleMoveFolder ... sem alterações)
-  const handleMoveDeck = async (itemToMove, newFolderId) => {
-    if (!itemToMove) return;
-    if (itemToMove.folder_id === newFolderId) {
+  const moveItemMutation = useMutation({
+    mutationFn: async ({ item, newParentId, type }) => {
+      if (type === "deck") {
+        return deckService.moveDeck(item.id, newParentId);
+      } else {
+        return folderService.moveFolder(item.id, newParentId);
+      }
+    },
+    onSuccess: () => {
+      invalidateDashboardCache();
+    },
+    onError: (error) => {
+      if (error?.code === "23505") {
+        toast.error("Um item com este nome já existe na pasta de destino.");
+      } else {
+        toast.error(error.message || "Erro ao mover o item.");
+      }
+      invalidateDashboardCache();
+    },
+    onSettled: () => {
+      setDeckToMove(null);
+      setFolderToMove(null);
+    },
+  });
+  const isMoving = moveItemMutation.isPending;
+
+  const handleMoveDeck = (itemToMove, newFolderId) => {
+    if (!itemToMove || itemToMove.folder_id === newFolderId) {
       setDeckToMove(null);
       return;
     }
+
     const isDuplicate = decks.some(
       (d) =>
         d.name.toLowerCase() === itemToMove.name.toLowerCase() &&
@@ -270,31 +334,16 @@ export function DashboardPage() {
       return;
     }
 
-    setIsMoving(true);
     setDeckToMove(null);
-
-    const originalDecks = [...decks];
-    const updatedDecks = decks.map((d) =>
-      d.id === itemToMove.id ? { ...d, folder_id: newFolderId } : d
-    );
-
-    setTimeout(() => {
-      setDecks(updatedDecks);
-    }, 0);
-
-    try {
-      await deckService.moveDeck(itemToMove.id, newFolderId);
-    } catch (error) {
-      toast.error(error.message || "Erro ao mover o baralho.");
-      setDecks(originalDecks);
-    } finally {
-      setIsMoving(false);
-    }
+    moveItemMutation.mutate({
+      item: itemToMove,
+      newParentId: newFolderId,
+      type: "deck",
+    });
   };
 
-  const handleMoveFolder = async (itemToMove, newParentFolderId) => {
-    if (!itemToMove) return;
-    if (itemToMove.parent_folder_id === newParentFolderId) {
+  const handleMoveFolder = (itemToMove, newParentFolderId) => {
+    if (!itemToMove || itemToMove.parent_folder_id === newParentFolderId) {
       setFolderToMove(null);
       return;
     }
@@ -303,6 +352,7 @@ export function DashboardPage() {
       setFolderToMove(null);
       return;
     }
+
     const isDuplicate = folders.some(
       (f) =>
         f.name.toLowerCase() === itemToMove.name.toLowerCase() &&
@@ -317,49 +367,43 @@ export function DashboardPage() {
       return;
     }
 
-    setIsMoving(true);
     setFolderToMove(null);
-
-    const originalFolders = [...folders];
-    const updatedFolders = folders.map((f) =>
-      f.id === itemToMove.id ? { ...f, parent_folder_id: newParentFolderId } : f
-    );
-
-    setTimeout(() => {
-      setFolders(updatedFolders);
-    }, 0);
-
-    try {
-      await folderService.moveFolder(itemToMove.id, newParentFolderId);
-    } catch (error) {
-      toast.error(error.message || "Erro ao mover a pasta.");
-      setFolders(originalFolders);
-    } finally {
-      setIsMoving(false);
-    }
+    moveItemMutation.mutate({
+      item: itemToMove,
+      newParentId: newParentFolderId,
+      type: "folder",
+    });
   };
 
-  // (handleDelete, toggleFolder, isDisabled, getContextMenuItems... sem alterações)
-  const handleDelete = async () => {
-    if (!itemToDelete) return;
-    const { id, type, name } = itemToDelete;
-    setIsDeleting(true);
-    try {
+  const deleteItemMutation = useMutation({
+    mutationFn: async ({ type, id }) => {
       if (type === "deck") {
-        await deckService.deleteDeck(id);
+        return deckService.deleteDeck(id);
       } else {
-        await folderService.deleteFolder(id);
+        return folderService.deleteFolder(id);
       }
-      toast.success(`"${name}" foi excluído(a).`);
-      fetchDashboardData();
-    } catch (error) {
+    },
+    onSuccess: (data, variables) => {
+      toast.success(`"${variables.name}" foi excluído(a).`);
+      invalidateDashboardCache();
+    },
+    onError: (error) => {
       toast.error(error.message || "Erro ao excluir.");
-    } finally {
+    },
+    onSettled: () => {
       setItemToDelete(null);
-      setIsDeleting(false);
-    }
+    },
+  });
+  const isDeleting = deleteItemMutation.isPending;
+
+  const handleDelete = () => {
+    if (!itemToDelete) return;
+    deleteItemMutation.mutate(itemToDelete);
   };
 
+  const isDisabled = isMoving || isDeleting || !!isRenamingId;
+
+  // --- Funções de UI (Inalteradas) ---
   const toggleFolder = (folderId) => {
     setOpenFolders((prev) => {
       const newSet = new Set(prev);
@@ -440,14 +484,16 @@ export function DashboardPage() {
     }, 500);
     setTouchTimeout(timeout);
   };
+
   const handleTouchEnd = (e) => {
     e.stopPropagation();
     if (touchTimeout) clearTimeout(touchTimeout);
     setTouchTimeout(null);
   };
 
-  // <<< INÍCIO DA LÓGICA DND-KIT >>>
+  // --- Lógica DND-Kit (Inalterada) ---
 
+  // <<< ERRO 1 CORRIGIDO: Esta linha agora funciona >>>
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -456,7 +502,6 @@ export function DashboardPage() {
     })
   );
 
-  // (handleDragStart... sem alterações)
   const handleDragStart = (event) => {
     const findNodeById = (nodes, id) => {
       for (const node of nodes) {
@@ -474,7 +519,6 @@ export function DashboardPage() {
     );
   };
 
-  // (findDepth... sem alterações)
   const findDepth = (nodes, id, depth = 0) => {
     for (const node of nodes) {
       if (node.id === id) return depth;
@@ -486,7 +530,6 @@ export function DashboardPage() {
     return -1;
   };
 
-  // (handleDragMove... sem alterações)
   const handleDragMove = (event) => {
     const { active, over } = event;
     if (!over || over.id === "root") {
@@ -525,7 +568,6 @@ export function DashboardPage() {
     }, HOVER_TO_OPEN_DELAY);
   };
 
-  // (handleDragEnd, handleDragCancel... sem alterações)
   const handleDragEnd = (event) => {
     if (hoverTimerRef.current) {
       clearTimeout(hoverTimerRef.current);
@@ -543,37 +585,26 @@ export function DashboardPage() {
       return;
     }
 
-    const itemData = active.data.current?.itemData;
-    const itemType = active.data.current?.type;
+    const item =
+      folders.find((f) => f.id === draggableId) ||
+      decks.find((d) => d.id === draggableId);
 
-    if (!itemData) {
-      const item =
-        folders.find((f) => f.id === draggableId) ||
-        decks.find((d) => d.id === draggableId);
-      if (!item) {
-        console.error(
-          "Não foi possível encontrar dados do item arrastado:",
-          draggableId
-        );
-        return;
-      }
-      const newParentId = droppableId === "root" ? null : droppableId;
-      if (item.folder_id !== undefined) {
-        handleMoveDeck(item, newParentId);
-      } else if (
-        item.parent_folder_id !== undefined ||
-        item.parent_folder_id === null
-      ) {
-        handleMoveFolder(item, newParentId);
-      }
+    if (!item) {
+      console.error(
+        "Não foi possível encontrar dados do item arrastado:",
+        draggableId
+      );
       return;
     }
 
     const newParentId = droppableId === "root" ? null : droppableId;
 
-    if (itemType === "deck") {
-      handleMoveDeck(itemData, newParentId);
-    } else if (itemType === "folder") {
+    if (item.folder_id !== undefined) {
+      handleMoveDeck(item, newParentId);
+    } else if (
+      item.parent_folder_id !== undefined ||
+      item.parent_folder_id === null
+    ) {
       const getSubfolderIds = (folderId) => {
         let children = folders.filter((f) => f.parent_folder_id === folderId);
         let ids = children.map((c) => c.id);
@@ -582,14 +613,14 @@ export function DashboardPage() {
         });
         return ids;
       };
-      const disabledFolderIds = [itemData.id, ...getSubfolderIds(itemData.id)];
+      const disabledFolderIds = [item.id, ...getSubfolderIds(item.id)];
       if (disabledFolderIds.includes(newParentId)) {
         toast.error(
           "Não pode mover uma pasta para dentro dela mesma ou de uma subpasta."
         );
         return;
       }
-      handleMoveFolder(itemData, newParentId);
+      handleMoveFolder(item, newParentId);
     }
   };
 
@@ -602,13 +633,12 @@ export function DashboardPage() {
     setActiveDragItem(null);
   };
 
-  // <<< Início do FileSystemNode >>>
-  // (Componente FileSystemNode sem alterações, ele já calcula o padding corretamente)
+  // --- Componentes de Renderização ---
+
   const FileSystemNode = useCallback(
     ({ node, depth }) => {
       const isEditing = editingItemId === node.id;
-      const isRenaming = isRenamingId === node.id;
-      const isDisabled = isMoving || isDeleting || !!isRenamingId;
+      const isRenaming = isRenamingId === node.id && renameMutation.isPending;
       const isOpen = openFolders.has(node.id);
 
       const handleContextMenu = (e) => {
@@ -620,7 +650,6 @@ export function DashboardPage() {
 
       const indentation = depth * 24;
 
-      // --- Hooks DND-Kit ---
       const {
         attributes,
         listeners,
@@ -656,7 +685,6 @@ export function DashboardPage() {
         opacity: isDragging ? 0.4 : 1,
       };
 
-      // --- Renderização ---
       if (node.type === "folder") {
         return (
           <div
@@ -666,7 +694,6 @@ export function DashboardPage() {
               isOver && !isOpen ? "dragging-over-folder" : ""
             }`}
           >
-            {/* 1. A LINHA DA PASTA (Handle) */}
             <div
               {...listeners}
               {...attributes}
@@ -706,7 +733,6 @@ export function DashboardPage() {
               )}
             </div>
 
-            {/* 2. A ÁREA DE FILHOS (é o seu próprio Droppable) */}
             {isOpen && (
               <DroppableArea id={node.id} depth={depth + 1}>
                 {node.children && node.children.length > 0 ? (
@@ -718,7 +744,6 @@ export function DashboardPage() {
                     />
                   ))
                 ) : (
-                  // Mensagem de Pasta Vazia
                   <div
                     className="text-xs text-gray-400 p-2"
                     style={{ paddingLeft: `${(depth + 1) * 24}px` }}
@@ -732,7 +757,7 @@ export function DashboardPage() {
         );
       }
 
-      // --- DECK --- (É apenas Draggable, NÃO é Droppable)
+      // --- DECK ---
       return (
         <div
           ref={setDraggableRef}
@@ -754,7 +779,6 @@ export function DashboardPage() {
             }
             onTouchEnd={handleTouchEnd}
           >
-            {/* O ícone do deck agora alinha com a seta da pasta */}
             <span className="w-6 h-6 mr-1 flex items-center justify-center text-blue-400 flex-shrink-0">
               🃏
             </span>
@@ -766,13 +790,13 @@ export function DashboardPage() {
                 onCancel={() => setEditingItemId(null)}
               />
             ) : isRenaming ? (
-              <span className="truncate block w-full opacity-50 italic">
+              <span className="truncate block w-full opacity-50 italic ml-2">
                 A guardar...
               </span>
             ) : (
               <Link
                 to={`/deck/${node.id}`}
-                className="truncate block w-full cursor-pointer ml-2" // ml-2 para alinhar com nome da pasta
+                className="truncate block w-full cursor-pointer ml-2"
               >
                 {node.name}
               </Link>
@@ -780,15 +804,14 @@ export function DashboardPage() {
           </div>
         </div>
       );
-      // Dependências do useCallback
     },
     [
       editingItemId,
       isRenamingId,
-      isMoving,
-      isDeleting,
+      renameMutation.isPending,
+      isDisabled,
       openFolders,
-      handleRename,
+      handleRename, // Esta função é recriada se 'folders' ou 'decks' mudarem
       setContextMenu,
       setEditingItemId,
       toggleFolder,
@@ -796,17 +819,13 @@ export function DashboardPage() {
       handleTouchEnd,
     ]
   );
-  // <<< Fim do FileSystemNode >>>
 
-  // <<< CORREÇÃO 1 (ALINHAMENTO): Remover o marginLeft da DroppableArea >>>
   const DroppableArea = ({ id, depth = 0, children }) => {
     const { setNodeRef, isOver } = useDroppable({
       id: id,
       disabled: isDisabled,
       data: { type: "folder" },
     });
-
-    // const indentation = depth * 24; // Esta indentação não é mais necessária aqui
 
     const isRoot = id === "root";
     const isRootAndEmpty = isRoot && treeData.length === 0;
@@ -820,8 +839,6 @@ export function DashboardPage() {
             `}
         style={{
           minHeight: isRootAndEmpty ? "100px" : "auto",
-          // <<< CORREÇÃO (Problema 1): Remover o marginLeft.
-          // O FileSystemNode já controla o seu próprio padding-left.
           marginLeft: "0px",
         }}
       >
@@ -830,13 +847,12 @@ export function DashboardPage() {
     );
   };
 
-  // --- Renderização Principal ---
+  // --- Renderização Principal (JSX) ---
   return (
     <div className="min-h-screen pb-8" onClick={() => setContextMenu(null)}>
       <main className="space-y-8">
         {/* Bloco de Atividade */}
         <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow">
-          {/* ... (código do resumo de atividade e calendário) ... */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
             <div>
               <h2 className="text-xl font-bold">Resumo de Atividade</h2>
@@ -905,7 +921,6 @@ export function DashboardPage() {
           {/* Bloco de Decks/Pastas */}
           <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-4 rounded-lg shadow min-h-[400px]">
             <GlobalSearch />
-
             {loading ? (
               <p className="text-center mt-8">Carregando...</p>
             ) : (
@@ -916,29 +931,14 @@ export function DashboardPage() {
                 onDragMove={handleDragMove}
                 onDragCancel={handleDragCancel}
               >
-                {/* <<< CORREÇÃO 2 (ÁREA RAIZ): Movido o Título para DENTRO da DroppableArea >>> */}
                 <div className="mt-4">
                   <DroppableArea id="root" depth={0}>
-                    {/* O Título "Meus Baralhos" agora está DENTRO da área de drop */}
-                    <div
-                      className={`
-                            text-lg font-semibold mb-2 p-1 rounded-md 
-                            ${
-                              // Removemos a classe de hover manual, pois
-                              // a 'DroppableArea' agora aplica 'dragging-over-folder'
-                              // ao wrapper automaticamente quando 'isOver' é true.
-                              ""
-                            }
-                        `}
-                    >
+                    <div className="text-lg font-semibold mb-2 p-1 rounded-md">
                       Meus Baralhos
                     </div>
-
                     {treeData.map((node) => (
                       <FileSystemNode key={node.id} node={node} depth={0} />
                     ))}
-
-                    {/* Mensagem de Raiz Vazia */}
                     {treeData.length === 0 && !activeDragItem && (
                       <p className="text-gray-500 dark:text-gray-400 text-center mt-8 p-4 pointer-events-none">
                         Crie seu primeiro pasta ou baralho no painel ao lado, ou
@@ -947,8 +947,6 @@ export function DashboardPage() {
                     )}
                   </DroppableArea>
                 </div>
-
-                {/* DragOverlay (sem alterações) */}
                 <DragOverlay dropAnimation={null}>
                   {activeDragItem ? (
                     <div className="dragging-item-overlay">
@@ -993,7 +991,7 @@ export function DashboardPage() {
             )}
           </div>
 
-          {/* ... (Bloco de Criação - sem alterações) ... */}
+          {/* Bloco de Criação */}
           <div
             className="lg:col-span-1 space-y-6"
             onClick={(e) => e.stopPropagation()}
@@ -1048,7 +1046,7 @@ export function DashboardPage() {
         </div>
       </main>
 
-      {/* ... (Modais - sem alterações) ... */}
+      {/* Modais */}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

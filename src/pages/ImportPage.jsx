@@ -6,7 +6,11 @@ import { supabase } from "@/supabaseClient";
 import { useAuth } from "@/AuthContext";
 import { toast } from "react-hot-toast";
 
-const TARGET_FIELDS = [ 
+// <<< 1. Importar useMutation e useQueryClient >>>
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+const TARGET_FIELDS = [
+  // ... (TARGET_FIELDS inalterado) ...
   { value: "ignore", label: "Ignorar esta coluna" },
   { value: "title", label: "Título do Cartão" },
   { value: "front_content", label: "Frente (Pergunta)" },
@@ -17,7 +21,7 @@ const TARGET_FIELDS = [
 ];
 
 const DELIMITERS = [
-  // ... (sem alterações)
+  // ... (DELIMITERS inalterado) ...
   { value: "", label: "Automático" },
   { value: ",", label: "Vírgula (,)" },
   { value: ";", label: "Ponto e vírgula (;)" },
@@ -29,21 +33,98 @@ function ImportPage() {
   const { deckId } = useParams();
   const navigate = useNavigate();
   const { session } = useAuth();
+  const userId = session?.user?.id;
+
+  // <<< 2. Obter o Query Client >>>
+  const queryClient = useQueryClient();
+
+  // --- Estados de UI ---
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState("");
   const [delimiter, setDelimiter] = useState("");
   const [headers, setHeaders] = useState([]);
   const [mappings, setMappings] = useState({});
-  
-  // <<< 1. Dividir estados de loading >>>
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  
   const [step, setStep] = useState(1);
   const fullCsvData = useRef([]);
 
+  // --- 3. Remover estados de loading manuais ---
+  // [REMOVIDO] const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // [REMOVIDO] const [isImporting, setIsImporting] = useState(false);
+
+  // --- 4. Criar a Mutação de Análise ---
+  const analyzeMutation = useMutation({
+    mutationFn: (fileToParse) => {
+      // O Papa.parse é baseado em callbacks, por isso "prometemos" ele
+      return new Promise((resolve, reject) => {
+        Papa.parse(fileToParse, {
+          delimiter: delimiter,
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            const criticalErrors = results.errors.filter(
+              (e) => e.code !== "TooManyFields" && e.code !== "TooFewFields"
+            );
+
+            if (criticalErrors.length > 0) {
+              return reject(criticalErrors[0]); // Rejeita a promessa com o erro
+            }
+            if (results.meta.fields) {
+              if (results.meta.fields.length < 2) {
+                return reject(
+                  new Error(
+                    "O arquivo precisa ter pelo menos duas colunas: uma para a frente e uma para o verso do cartão."
+                  )
+                );
+              }
+              resolve(results); // Resolve a promessa com os resultados
+            } else {
+              return reject(
+                new Error(
+                  "Não foi possível encontrar o cabeçalho do arquivo. Verifique o formato e o separador."
+                )
+              );
+            }
+          },
+          error: (err) => {
+            reject(err); // Rejeita em caso de erro do PapaParse
+          },
+        });
+      });
+    },
+    onSuccess: (results) => {
+      // A lógica do 'complete' do PapaParse vem para cá
+      setHeaders(results.meta.fields);
+      const initialMappings = {};
+      results.meta.fields.forEach((field) => {
+        initialMappings[field] = "ignore";
+        const lowerField = field.toLowerCase();
+        if (lowerField.includes("frente") || lowerField.includes("pergunta"))
+          initialMappings[field] = "front_content";
+        if (lowerField.includes("verso") || lowerField.includes("resposta"))
+          initialMappings[field] = "back_content";
+        if (lowerField.includes("titulo") || lowerField.includes("título"))
+          initialMappings[field] = "title";
+        if (lowerField.includes("teoria"))
+          initialMappings[field] = "theory_notes";
+        if (lowerField.includes("fonte") || lowerField.includes("source"))
+          initialMappings[field] = "source_references";
+        if (lowerField.includes("tag")) initialMappings[field] = "tags";
+      });
+      setMappings(initialMappings);
+      fullCsvData.current = results.data;
+      setStep(2);
+    },
+    onError: (error) => {
+      // A lógica do 'error' do PapaParse ou dos erros personalizados vem para cá
+      const message = error.message || "Falha ao processar o arquivo.";
+      toast.error(
+        error.row ? `Erro na linha ${error.row}: ${message}` : message
+      );
+    },
+  });
+
   const handleFileChange = (e) => {
-    // ... (sem alterações)
+    // ... (função inalterada)
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
     setFile(selectedFile);
@@ -52,67 +133,34 @@ function ImportPage() {
     setHeaders([]);
   };
 
-  // <<< 2. Atualizar handleAnalyzeAndMap >>>
-  const handleAnalyzeAndMap = useCallback(() => {
+  const handleAnalyzeAndMap = () => {
     if (!file) return;
-    setIsAnalyzing(true); // <<< Usar estado específico
+    analyzeMutation.mutate(file); // Chama a mutação
+  };
 
-    Papa.parse(file, {
-      delimiter: delimiter,
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        setIsAnalyzing(false); // <<< Usar estado específico
-        // ... (resto da lógica sem alterações)
-        const criticalErrors = results.errors.filter(
-          (e) => e.code !== "TooManyFields" && e.code !== "TooFewFields"
-        );
+  // --- 5. Criar a Mutação de Importação ---
+  const importMutation = useMutation({
+    mutationFn: (cardsToInsert) => {
+      return supabase.from("cards").insert(cardsToInsert);
+    },
+    onSuccess: (result, cardsToInsert) => {
+      if (result.error) throw result.error; // Lança o erro se o Supabase o retornar no objeto de sucesso
 
-        if (criticalErrors.length > 0) {
-          const firstError = criticalErrors[0];
-          toast.error(
-            `Erro ao ler o arquivo na linha ${firstError.row}: ${firstError.message}. Tente selecionar outro separador.`
-          );
-          return;
-        }
+      toast.success(`${cardsToInsert.length} cartões importados com sucesso!`);
 
-        if (results.meta.fields) {
-          if (results.meta.fields.length < 2) {
-            toast.error(
-              "O arquivo precisa ter pelo menos duas colunas: uma para a frente e uma para o verso do cartão."
-            );
-            return;
-          }
-          setHeaders(results.meta.fields);
-          const initialMappings = {};
-          results.meta.fields.forEach((field) => {
-            initialMappings[field] = "ignore"; // Default to ignore
-            // Basic heuristic for auto-mapping
-            const lowerField = field.toLowerCase();
-            if (lowerField.includes('frente') || lowerField.includes('pergunta')) initialMappings[field] = 'front_content';
-            if (lowerField.includes('verso') || lowerField.includes('resposta')) initialMappings[field] = 'back_content';
-            if (lowerField.includes('titulo') || lowerField.includes('título')) initialMappings[field] = 'title';
-            if (lowerField.includes('teoria')) initialMappings[field] = 'theory_notes';
-            if (lowerField.includes('fonte') || lowerField.includes('source')) initialMappings[field] = 'source_references';
-            if (lowerField.includes('tag')) initialMappings[field] = 'tags';
-          });
-          setMappings(initialMappings);
-          fullCsvData.current = results.data;
-          setStep(2);
-        } else {
-          toast.error(
-            "Não foi possível encontrar o cabeçalho do arquivo. Verifique o formato e o separador."
-          );
-        }
-      },
-      error: (err) => {
-        setIsAnalyzing(false); // <<< Usar estado específico
-        toast.error(`Falha ao processar o arquivo: ${err.message}`);
-      },
-    });
-  }, [file, delimiter]);
+      // <<< 6. Invalidar os caches relevantes >>>
+      queryClient.invalidateQueries({ queryKey: ["cards", deckId] });
+      queryClient.invalidateQueries({
+        queryKey: ["cardStats", deckId, userId],
+      });
 
-  // <<< 3. Atualizar handleFinalImport >>>
+      navigate(`/deck/${deckId}`);
+    },
+    onError: (error) => {
+      toast.error(`Ocorreu um erro ao salvar os cartões: ${error.message}`);
+    },
+  });
+
   const handleFinalImport = async () => {
     if (fullCsvData.current.length === 0 || !session) return;
 
@@ -127,11 +175,8 @@ function ImportPage() {
       return;
     }
 
-    setIsImporting(true); // <<< Usar estado específico
-
     const cardsToInsert = fullCsvData.current
       .map((row) => {
-         // ... (lógica de mapeamento sem alterações)
         const newCard = { deck_id: deckId, user_id: session.user.id };
         for (const header of headers) {
           const targetField = mappings[header];
@@ -145,9 +190,10 @@ function ImportPage() {
                     .filter((s) => s)
                 : [];
             } else if (targetField === "title") {
-              newCard[targetField] = value && value.trim() ? value.trim() : null;
+              newCard[targetField] =
+                value && value.trim() ? value.trim() : null;
             } else {
-              newCard[targetField] = value || null; 
+              newCard[targetField] = value || null;
             }
           }
         }
@@ -156,29 +202,21 @@ function ImportPage() {
         }
         return newCard;
       })
-      .filter(card => card !== null); 
+      .filter((card) => card !== null);
 
     if (cardsToInsert.length === 0) {
       toast.error(
         "Nenhum cartão válido para importar. Verifique o mapeamento e se as colunas de Frente e Verso têm conteúdo."
       );
-      setIsImporting(false); // <<< Usar estado específico
       return;
     }
 
-    try {
-        const { error } = await supabase.from("cards").insert(cardsToInsert);
-        if (error) throw error;
-
-        toast.success(`${cardsToInsert.length} cartões importados com sucesso!`);
-        navigate(`/deck/${deckId}`);
-
-    } catch (error) {
-         toast.error(`Ocorreu um erro ao salvar os cartões: ${error.message}`);
-    } finally {
-        setIsImporting(false); // <<< Usar estado específico
-    }
+    importMutation.mutate(cardsToInsert); // Chama a mutação
   };
+
+  // --- 7. Estados de Loading derivados das Mutações ---
+  const isAnalyzing = analyzeMutation.isPending;
+  const isImporting = importMutation.isPending;
 
   const usedFields = useMemo(
     () => new Set(Object.values(mappings)),
@@ -194,7 +232,7 @@ function ImportPage() {
     );
   };
 
-  // <<< 4. Atualizar JSX com os novos estados de loading >>>
+  // --- 8. Atualizar o JSX com os novos estados de loading ---
   return (
     <div className="min-h-screen">
       <header className="mb-8">
@@ -210,8 +248,9 @@ function ImportPage() {
             <div className="mb-4">
               <label
                 htmlFor="csv-upload"
-                // Desabilitar se estiver a analisar
-                className={`cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 inline-block ${isAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 inline-block ${
+                  isAnalyzing ? "opacity-50 cursor-not-allowed" : ""
+                }`} // <<< Usa 'isAnalyzing'
               >
                 Escolher Arquivo (.csv ou .txt)
               </label>
@@ -221,7 +260,7 @@ function ImportPage() {
                 accept=".csv,.txt"
                 className="hidden"
                 onChange={handleFileChange}
-                disabled={isAnalyzing} // Desabilitar
+                disabled={isAnalyzing} // <<< Usa 'isAnalyzing'
               />
               {fileName && (
                 <span className="ml-4 font-semibold">{fileName}</span>
@@ -237,7 +276,11 @@ function ImportPage() {
                   {DELIMITERS.map((d) => (
                     <label
                       key={d.value || "auto"}
-                      className={`flex items-center space-x-2 ${isAnalyzing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                      className={`flex items-center space-x-2 ${
+                        isAnalyzing
+                          ? "cursor-not-allowed opacity-50"
+                          : "cursor-pointer"
+                      }`} // <<< Usa 'isAnalyzing'
                     >
                       <input
                         type="radio"
@@ -245,7 +288,7 @@ function ImportPage() {
                         value={d.value}
                         checked={delimiter === d.value}
                         onChange={(e) => setDelimiter(e.target.value)}
-                        disabled={isAnalyzing} // Desabilitar
+                        disabled={isAnalyzing} // <<< Usa 'isAnalyzing'
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                       />
                       <span>{d.label}</span>
@@ -254,7 +297,7 @@ function ImportPage() {
                 </div>
                 <button
                   onClick={handleAnalyzeAndMap}
-                  disabled={isAnalyzing} // Usar estado específico
+                  disabled={isAnalyzing} // <<< Usa 'isAnalyzing'
                   className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-75 disabled:cursor-not-allowed"
                 >
                   {isAnalyzing ? "Analisando..." : "Analisar e Mapear Colunas"}
@@ -271,7 +314,9 @@ function ImportPage() {
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
               Associe cada coluna do seu arquivo a um campo do CogniCard.{" "}
-              <strong className="text-red-500">As colunas de Frente e Verso são obrigatórias.</strong>
+              <strong className="text-red-500">
+                As colunas de Frente e Verso são obrigatórias.
+              </strong>
             </p>
             <div className="space-y-4 mb-6">
               {headers.map((header) => {
@@ -292,7 +337,7 @@ function ImportPage() {
                           [header]: e.target.value,
                         }))
                       }
-                      disabled={isImporting} // Desabilitar durante a importação final
+                      disabled={isImporting} // <<< Usa 'isImporting'
                       className="w-full px-3 py-2 border rounded-md bg-gray-200 text-black dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                     >
                       {availableFields.map((field) => (
@@ -308,14 +353,14 @@ function ImportPage() {
             <div className="flex justify-between mt-6">
               <button
                 onClick={() => setStep(1)}
-                disabled={isImporting} // Desabilitar "Voltar" durante importação
+                disabled={isImporting} // <<< Usa 'isImporting'
                 className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-50"
               >
                 Voltar
               </button>
               <button
                 onClick={handleFinalImport}
-                disabled={isImporting} // Usar estado específico
+                disabled={isImporting} // <<< Usa 'isImporting'
                 className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-75 disabled:cursor-not-allowed"
               >
                 {isImporting ? "A importar..." : `Finalizar Importação`}
