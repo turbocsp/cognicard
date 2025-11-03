@@ -12,20 +12,17 @@ import GlobalSearch from "@/components/GlobalSearch";
 import ActivityCalendar from "@/components/ActivityCalendar";
 import DailySummaryModal from "@/components/DailySummaryModal";
 import Clock from "@/components/Clock";
+import { CreateItemForm } from "@/components/CreateItemForm";
+import { FileSystemTree } from "@/components/FileSystemTree";
 
-// <<< ERRO 1 CORRIGIDO: Imports do DND-Kit restaurados >>>
 import {
   DndContext,
   PointerSensor,
   useSensor,
-  useSensors, // <--- ESTAVA FALTANDO
+  useSensors,
   DragOverlay,
-  useDraggable,
-  useDroppable,
 } from "@dnd-kit/core";
-
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-
 import deckService from "@/services/deckService";
 import folderService from "@/services/folderService";
 import { supabase } from "@/supabaseClient";
@@ -39,8 +36,6 @@ export function DashboardPage() {
   const queryClient = useQueryClient();
 
   // --- Estados de UI ---
-  const [newItemName, setNewItemName] = useState("");
-  const [newParentFolderId, setNewParentFolderId] = useState("root");
   const [itemToDelete, setItemToDelete] = useState(null);
   const [deckToMove, setDeckToMove] = useState(null);
   const [folderToMove, setFolderToMove] = useState(null);
@@ -68,31 +63,39 @@ export function DashboardPage() {
     enabled: !!userId,
   });
 
-  // <<< ERRO 2 CORRIGIDO: queryFn preenchida >>>
+  // <<< CORREÇÃO AQUI >>>
   const { data: streakData = { current_streak: 0, longest_streak: 0 } } =
     useQuery({
       queryKey: ["streak", userId],
       queryFn: async () => {
-        // <-- Função estava em falta
+        // Esta função estava em falta
         const { data, error } = await supabase
-          .rpc("get_study_streak", { p_user_id: userId })
+          .rpc("get_study_streak", { p_user_id: userId }) //
           .single();
-        if (error) throw error;
+        if (error) {
+          console.error("Erro ao buscar streak:", error.message);
+          // Retorna o default em caso de erro para não quebrar a UI
+          return { current_streak: 0, longest_streak: 0 };
+        }
         return data;
       },
       enabled: !!userId,
     });
 
-  // <<< ERRO 2 CORRIGIDO: queryFn preenchida >>>
+  // <<< CORREÇÃO AQUI >>>
   const { data: activityData = [] } = useQuery({
     queryKey: ["activity", userId, currentYear],
     queryFn: async () => {
-      // <-- Função estava em falta
+      // Esta função estava em falta
       const { data, error } = await supabase.rpc("get_study_activity", {
+        //
         p_user_id: userId,
         p_year: currentYear,
       });
-      if (error) throw error;
+      if (error) {
+        console.error("Erro ao buscar atividade:", error.message);
+        return []; // Retorna default em caso de erro
+      }
       return data || [];
     },
     enabled: !!userId,
@@ -100,8 +103,9 @@ export function DashboardPage() {
 
   const loading = isLoadingFolders || isLoadingDecks;
 
-  // --- Estado Derivado (useMemo) ---
+  // --- Estado Derivado (useMemo) (Inalterado) ---
   const treeData = useMemo(() => {
+    // ... (lógica buildTree inalterada) ...
     const buildTree = (foldersData, decksData) => {
       const nodeMap = new Map();
       const tree = [];
@@ -148,75 +152,14 @@ export function DashboardPage() {
     return buildTree(folders, decks);
   }, [folders, decks]);
 
-  // --- Mutações (useMutation) ---
-
+  // --- Mutações (Inalteradas) ---
   const invalidateDashboardCache = () => {
     queryClient.invalidateQueries({ queryKey: ["folders", userId] });
     queryClient.invalidateQueries({ queryKey: ["decks", userId] });
   };
 
-  const createItemMutation = useMutation({
-    mutationFn: async ({ type, payload }) => {
-      if (type === "deck") {
-        return deckService.createDeck(payload);
-      } else {
-        return folderService.createFolder(payload);
-      }
-    },
-    onSuccess: (data, { type }) => {
-      toast.success(
-        `${type === "deck" ? "Baralho" : "Pasta"} criado com sucesso!`
-      );
-      invalidateDashboardCache();
-      setNewItemName("");
-      const parentId = data.folder_id || data.parent_folder_id;
-      if (parentId) setOpenFolders((prev) => new Set(prev).add(parentId));
-    },
-    onError: (error, { type }) => {
-      if (error?.code === "23505") {
-        toast.error(
-          `Já existe ${
-            type === "deck" ? "um baralho" : "uma pasta"
-          } com este nome neste local.`
-        );
-      } else {
-        toast.error(error.message || `Erro ao criar ${type}.`);
-      }
-    },
-  });
-  const isCreating = createItemMutation.isPending;
-
-  const handleCreate = (type, e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const trimmedName = newItemName.trim();
-    if (!trimmedName) {
-      toast.error("O nome não pode estar vazio.");
-      return;
-    }
-
-    const parentId = newParentFolderId === "root" ? null : newParentFolderId;
-
-    const siblings =
-      type === "folder"
-        ? folders.filter((f) => f.parent_folder_id === parentId)
-        : decks.filter((d) => d.folder_id === parentId);
-
-    if (
-      siblings.some((s) => s.name.toLowerCase() === trimmedName.toLowerCase())
-    ) {
-      toast.error(`Já existe um item com o nome "${trimmedName}" neste local.`);
-      return;
-    }
-
-    const payload = { name: trimmedName, user_id: session.user.id };
-    if (type === "deck") payload.folder_id = parentId;
-    if (type === "folder") payload.parent_folder_id = parentId;
-
-    createItemMutation.mutate({ type, payload });
-  };
-
   const renameMutation = useMutation({
+    // ... (mutação 'rename' inalterada) ...
     mutationFn: async ({ id, newName, type }) => {
       if (type === "deck") {
         return deckService.renameDeck(id, newName);
@@ -242,6 +185,7 @@ export function DashboardPage() {
   });
 
   const handleRename = async (newName) => {
+    // ... (função 'handleRename' inalterada) ...
     const trimmedNewName = newName.trim();
     if (!editingItemId || !trimmedNewName) {
       setEditingItemId(null);
@@ -254,17 +198,14 @@ export function DashboardPage() {
       setEditingItemId(null);
       return;
     }
-
     const type = "parent_folder_id" in item ? "folder" : "deck";
     const parentId = type === "folder" ? item.parent_folder_id : item.folder_id;
-
     const siblingFolders = folders.filter(
       (f) => f.parent_folder_id === parentId && f.id !== editingItemId
     );
     const siblingDecks = decks.filter(
       (d) => d.folder_id === parentId && d.id !== editingItemId
     );
-
     if (
       (type === "folder" &&
         siblingFolders.some(
@@ -280,15 +221,14 @@ export function DashboardPage() {
       );
       return;
     }
-
     setIsRenamingId(editingItemId);
     setEditingItemId(null);
     setContextMenu(null);
-
     renameMutation.mutate({ type, id: editingItemId, newName: trimmedNewName });
   };
 
   const moveItemMutation = useMutation({
+    // ... (mutação 'move' inalterada) ...
     mutationFn: async ({ item, newParentId, type }) => {
       if (type === "deck") {
         return deckService.moveDeck(item.id, newParentId);
@@ -315,11 +255,11 @@ export function DashboardPage() {
   const isMoving = moveItemMutation.isPending;
 
   const handleMoveDeck = (itemToMove, newFolderId) => {
+    // ... (função 'handleMoveDeck' inalterada) ...
     if (!itemToMove || itemToMove.folder_id === newFolderId) {
       setDeckToMove(null);
       return;
     }
-
     const isDuplicate = decks.some(
       (d) =>
         d.name.toLowerCase() === itemToMove.name.toLowerCase() &&
@@ -333,7 +273,6 @@ export function DashboardPage() {
       setDeckToMove(null);
       return;
     }
-
     setDeckToMove(null);
     moveItemMutation.mutate({
       item: itemToMove,
@@ -343,6 +282,7 @@ export function DashboardPage() {
   };
 
   const handleMoveFolder = (itemToMove, newParentFolderId) => {
+    // ... (função 'handleMoveFolder' inalterada) ...
     if (!itemToMove || itemToMove.parent_folder_id === newParentFolderId) {
       setFolderToMove(null);
       return;
@@ -352,7 +292,6 @@ export function DashboardPage() {
       setFolderToMove(null);
       return;
     }
-
     const isDuplicate = folders.some(
       (f) =>
         f.name.toLowerCase() === itemToMove.name.toLowerCase() &&
@@ -366,7 +305,6 @@ export function DashboardPage() {
       setFolderToMove(null);
       return;
     }
-
     setFolderToMove(null);
     moveItemMutation.mutate({
       item: itemToMove,
@@ -376,6 +314,7 @@ export function DashboardPage() {
   };
 
   const deleteItemMutation = useMutation({
+    // ... (mutação 'delete' inalterada) ...
     mutationFn: async ({ type, id }) => {
       if (type === "deck") {
         return deckService.deleteDeck(id);
@@ -397,6 +336,7 @@ export function DashboardPage() {
   const isDeleting = deleteItemMutation.isPending;
 
   const handleDelete = () => {
+    // ... (função 'handleDelete' inalterada) ...
     if (!itemToDelete) return;
     deleteItemMutation.mutate(itemToDelete);
   };
@@ -418,17 +358,7 @@ export function DashboardPage() {
     const { item } = contextMenu;
     const itemData = item.data;
     const items = [];
-    if (item.type === "folder") {
-      items.push({
-        label: "Nova Pasta Aqui",
-        action: () => setNewParentFolderId(item.id),
-      });
-      items.push({
-        label: "Novo Baralho Aqui",
-        action: () => setNewParentFolderId(item.id),
-      });
-      items.push({ isSeparator: true });
-    }
+
     items.push({
       label: "Editar Nome",
       action: () => setEditingItemId(item.id),
@@ -453,26 +383,6 @@ export function DashboardPage() {
     return items;
   };
 
-  const renderFolderOptions = (nodes, depth = 0) => {
-    let options = [];
-    nodes.forEach((node) => {
-      if (node.type === "folder") {
-        options.push(
-          <option key={node.id} value={node.id}>
-            {" "}
-            {"—".repeat(depth)} {node.name}{" "}
-          </option>
-        );
-        if (node.children) {
-          options = options.concat(
-            renderFolderOptions(node.children, depth + 1)
-          );
-        }
-      }
-    });
-    return options;
-  };
-
   const handleTouchStart = (e, item) => {
     e.stopPropagation();
     const timeout = setTimeout(() => {
@@ -492,8 +402,6 @@ export function DashboardPage() {
   };
 
   // --- Lógica DND-Kit (Inalterada) ---
-
-  // <<< ERRO 1 CORRIGIDO: Esta linha agora funciona >>>
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -543,7 +451,6 @@ export function DashboardPage() {
     const overId = over.id;
     const isFolder = over.data.current?.type === "folder";
     const isOpen = openFolders.has(overId);
-
     if (!isFolder || isOpen || overId === active.id) {
       if (hoverTimerRef.current) {
         clearTimeout(hoverTimerRef.current);
@@ -584,11 +491,9 @@ export function DashboardPage() {
     if (draggableId === droppableId) {
       return;
     }
-
     const item =
       folders.find((f) => f.id === draggableId) ||
       decks.find((d) => d.id === draggableId);
-
     if (!item) {
       console.error(
         "Não foi possível encontrar dados do item arrastado:",
@@ -596,9 +501,7 @@ export function DashboardPage() {
       );
       return;
     }
-
     const newParentId = droppableId === "root" ? null : droppableId;
-
     if (item.folder_id !== undefined) {
       handleMoveDeck(item, newParentId);
     } else if (
@@ -633,225 +536,17 @@ export function DashboardPage() {
     setActiveDragItem(null);
   };
 
-  // --- Componentes de Renderização ---
-
-  const FileSystemNode = useCallback(
-    ({ node, depth }) => {
-      const isEditing = editingItemId === node.id;
-      const isRenaming = isRenamingId === node.id && renameMutation.isPending;
-      const isOpen = openFolders.has(node.id);
-
-      const handleContextMenu = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isEditing || isDisabled) return;
-        setContextMenu({ x: e.clientX, y: e.clientY, item: node });
-      };
-
-      const indentation = depth * 24;
-
-      const {
-        attributes,
-        listeners,
-        setNodeRef: setDraggableRef,
-        transform,
-        isDragging,
-      } = useDraggable({
-        id: node.id,
-        data: {
-          type: node.type,
-          itemData: node.data,
-          name: node.name,
-          depth: depth,
-        },
-        disabled: isEditing || isDisabled,
-      });
-
-      const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-        id: node.id,
-        disabled: isDisabled || node.type !== "folder",
-        data: { type: "folder" },
-      });
-
-      const setCombinedRef = (element) => {
-        setDraggableRef(element);
-        setDroppableRef(element);
-      };
-
-      const style = {
-        transform: transform
-          ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-          : undefined,
-        opacity: isDragging ? 0.4 : 1,
-      };
-
-      if (node.type === "folder") {
-        return (
-          <div
-            ref={setCombinedRef}
-            style={style}
-            className={`rounded-md ${
-              isOver && !isOpen ? "dragging-over-folder" : ""
-            }`}
-          >
-            <div
-              {...listeners}
-              {...attributes}
-              className={`flex items-center list-none p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700/50 ${
-                isEditing || isDisabled ? "" : "cursor-pointer"
-              }`}
-              style={{ paddingLeft: `${indentation}px` }}
-              onContextMenu={handleContextMenu}
-              onTouchStart={(e) =>
-                isEditing || isDisabled ? null : handleTouchStart(e, node)
-              }
-              onTouchEnd={handleTouchEnd}
-              onClick={() =>
-                isEditing || isDisabled ? null : toggleFolder(node.id)
-              }
-            >
-              <span
-                className={`w-6 h-6 flex items-center justify-center transition-transform ${
-                  isOpen ? "rotate-90" : ""
-                }`}
-              >
-                ▶
-              </span>
-              <span className="ml-1 text-yellow-400">📁</span>
-              {isEditing ? (
-                <InlineEdit
-                  initialValue={node.name}
-                  onSave={handleRename}
-                  onCancel={() => setEditingItemId(null)}
-                />
-              ) : isRenaming ? (
-                <span className="font-semibold ml-2 truncate opacity-50 italic">
-                  A guardar...
-                </span>
-              ) : (
-                <span className="font-semibold ml-2 truncate">{node.name}</span>
-              )}
-            </div>
-
-            {isOpen && (
-              <DroppableArea id={node.id} depth={depth + 1}>
-                {node.children && node.children.length > 0 ? (
-                  node.children.map((childNode) => (
-                    <FileSystemNode
-                      key={childNode.id}
-                      node={childNode}
-                      depth={depth + 1}
-                    />
-                  ))
-                ) : (
-                  <div
-                    className="text-xs text-gray-400 p-2"
-                    style={{ paddingLeft: `${(depth + 1) * 24}px` }}
-                  >
-                    (Pasta vazia)
-                  </div>
-                )}
-              </DroppableArea>
-            )}
-          </div>
-        );
-      }
-
-      // --- DECK ---
-      return (
-        <div
-          ref={setDraggableRef}
-          style={style}
-          {...listeners}
-          {...attributes}
-          className={`${isDragging ? "opacity-50" : ""}`}
-        >
-          <div
-            className={`flex items-center p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700/50 ${
-              isRenaming ? "opacity-50" : ""
-            }`}
-            style={{
-              paddingLeft: `${indentation}px`,
-            }}
-            onContextMenu={handleContextMenu}
-            onTouchStart={(e) =>
-              isEditing || isDisabled ? null : handleTouchStart(e, node)
-            }
-            onTouchEnd={handleTouchEnd}
-          >
-            <span className="w-6 h-6 mr-1 flex items-center justify-center text-blue-400 flex-shrink-0">
-              🃏
-            </span>
-
-            {isEditing ? (
-              <InlineEdit
-                initialValue={node.name}
-                onSave={handleRename}
-                onCancel={() => setEditingItemId(null)}
-              />
-            ) : isRenaming ? (
-              <span className="truncate block w-full opacity-50 italic ml-2">
-                A guardar...
-              </span>
-            ) : (
-              <Link
-                to={`/deck/${node.id}`}
-                className="truncate block w-full cursor-pointer ml-2"
-              >
-                {node.name}
-              </Link>
-            )}
-          </div>
-        </div>
-      );
-    },
-    [
-      editingItemId,
-      isRenamingId,
-      renameMutation.isPending,
-      isDisabled,
-      openFolders,
-      handleRename, // Esta função é recriada se 'folders' ou 'decks' mudarem
-      setContextMenu,
-      setEditingItemId,
-      toggleFolder,
-      handleTouchStart,
-      handleTouchEnd,
-    ]
-  );
-
-  const DroppableArea = ({ id, depth = 0, children }) => {
-    const { setNodeRef, isOver } = useDroppable({
-      id: id,
-      disabled: isDisabled,
-      data: { type: "folder" },
-    });
-
-    const isRoot = id === "root";
-    const isRootAndEmpty = isRoot && treeData.length === 0;
-
-    return (
-      <div
-        ref={setNodeRef}
-        className={`
-                ${isOver ? "dragging-over-folder" : ""} 
-                rounded-md
-            `}
-        style={{
-          minHeight: isRootAndEmpty ? "100px" : "auto",
-          marginLeft: "0px",
-        }}
-      >
-        {children}
-      </div>
-    );
+  const handleItemCreated = (parentId) => {
+    if (parentId) {
+      setOpenFolders((prev) => new Set(prev).add(parentId));
+    }
   };
 
   // --- Renderização Principal (JSX) ---
   return (
     <div className="min-h-screen pb-8" onClick={() => setContextMenu(null)}>
       <main className="space-y-8">
-        {/* Bloco de Atividade */}
+        {/* Bloco de Atividade (Agora recebe 'streakData' do useQuery) */}
         <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
             <div>
@@ -909,6 +604,7 @@ export function DashboardPage() {
               Ano
             </button>
           </div>
+          {/* Agora recebe 'activityData' do useQuery */}
           <ActivityCalendar
             year={currentYear}
             data={activityData}
@@ -932,21 +628,24 @@ export function DashboardPage() {
                 onDragCancel={handleDragCancel}
               >
                 <div className="mt-4">
-                  <DroppableArea id="root" depth={0}>
-                    <div className="text-lg font-semibold mb-2 p-1 rounded-md">
-                      Meus Baralhos
-                    </div>
-                    {treeData.map((node) => (
-                      <FileSystemNode key={node.id} node={node} depth={0} />
-                    ))}
-                    {treeData.length === 0 && !activeDragItem && (
-                      <p className="text-gray-500 dark:text-gray-400 text-center mt-8 p-4 pointer-events-none">
-                        Crie seu primeiro pasta ou baralho no painel ao lado, ou
-                        arraste itens para cá.
-                      </p>
-                    )}
-                  </DroppableArea>
+                  <FileSystemTree
+                    treeData={treeData}
+                    activeDragItem={activeDragItem}
+                    // Passa todos os estados e handlers necessários
+                    openFolders={openFolders}
+                    editingItemId={editingItemId}
+                    isRenamingId={isRenamingId}
+                    isDisabled={isDisabled}
+                    renameMutationPending={renameMutation.isPending}
+                    onToggleFolder={toggleFolder}
+                    onSetEditingItemId={setEditingItemId}
+                    onRename={handleRename}
+                    onContextMenu={setContextMenu}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                  />
                 </div>
+
                 <DragOverlay dropAnimation={null}>
                   {activeDragItem ? (
                     <div className="dragging-item-overlay">
@@ -992,61 +691,17 @@ export function DashboardPage() {
           </div>
 
           {/* Bloco de Criação */}
-          <div
-            className="lg:col-span-1 space-y-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-              <h2 className="text-xl font-semibold mb-4">Criar Novo Item</h2>
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Nome do Item
-                </label>
-                <input
-                  type="text"
-                  value={newItemName}
-                  onChange={(e) => setNewItemName(e.target.value)}
-                  placeholder="Ex: Biologia Celular"
-                  disabled={isCreating}
-                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
-                />
-              </div>
-              <div className="mt-4">
-                <label className="block text-sm font-medium mb-1">
-                  Localização
-                </label>
-                <select
-                  value={newParentFolderId}
-                  onChange={(e) => setNewParentFolderId(e.target.value)}
-                  disabled={isCreating}
-                  className="w-full p-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
-                >
-                  <option value="root">Raiz</option>
-                  {renderFolderOptions(treeData)}
-                </select>
-              </div>
-              <div className="flex space-x-4 mt-6">
-                <button
-                  onClick={(e) => handleCreate("deck", e)}
-                  disabled={isCreating || !newItemName}
-                  className="flex-1 bg-blue-800 hover:bg-blue-900 dark:bg-blue-700 dark:hover:bg-blue-800 text-white font-bold py-2 px-4 rounded-md disabled:opacity-75 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isCreating ? "A criar..." : "Criar Baralho"}
-                </button>
-                <button
-                  onClick={(e) => handleCreate("folder", e)}
-                  disabled={isCreating || !newItemName}
-                  className="flex-1 bg-amber-500 hover:bg-amber-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md disabled:opacity-75 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isCreating ? "A criar..." : "Criar Pasta"}
-                </button>
-              </div>
-            </div>
-          </div>
+          <CreateItemForm
+            userId={userId}
+            folders={folders}
+            decks={decks}
+            treeData={treeData}
+            onItemCreated={handleItemCreated}
+          />
         </div>
       </main>
 
-      {/* Modais */}
+      {/* Modais (Inalterados) */}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
