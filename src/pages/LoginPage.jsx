@@ -1,5 +1,7 @@
+// src/pages/LoginPage.jsx
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+// <<< 1. Importar 'useLocation' >>>
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { supabase } from "@/supabaseClient";
 import { toast } from "react-hot-toast";
 import Logo from "@/components/Logo";
@@ -9,6 +11,11 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  // <<< 2. Obter a localização e definir o 'from' >>>
+  const location = useLocation();
+  // Se o estado 'from' existir, usa-o; caso contrário, vai para o dashboard.
+  const from = location.state?.from?.pathname || "/dashboard";
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -21,7 +28,8 @@ function LoginPage() {
       if (error) {
         throw error;
       }
-      navigate("/dashboard");
+      // <<< 3. Navegar para 'from' em vez de '/dashboard' >>>
+      navigate(from, { replace: true });
     } catch (error) {
       if (error.message.includes("Invalid login credentials")) {
         toast.error("Email ou senha inválidos.");
@@ -36,6 +44,7 @@ function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
       <div className="p-8 max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-md">
+        {/* ... (Restante do JSX inalterado) ... */}
         <div className="flex justify-center mb-6">
           <Logo />
         </div>

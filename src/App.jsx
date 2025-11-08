@@ -1,7 +1,9 @@
 // src/App.jsx
-import { Routes, Route, Navigate, Outlet } from "react-router-dom";
-import { useAuth } from "@/AuthContext.jsx"; // Import useAuth
+// <<< 1. Importar 'useLocation' >>>
+import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "@/AuthContext.jsx";
 import Header from "@/components/Header.jsx";
+// ... (outros imports de páginas)
 import LoginPage from "@/pages/LoginPage.jsx";
 import SignUpPage from "@/pages/SignUpPage.jsx";
 import DashboardPage from "@/pages/DashboardPage.jsx";
@@ -14,21 +16,19 @@ import NotFoundPage from "@/pages/NotFoundPage.jsx";
 
 // --- Layouts de Proteção ---
 
-// Layout para rotas protegidas que PRECISAM do Header
 function ProtectedLayoutWithHeader() {
-  const { session, loading } = useAuth(); // <<< 1. Obter 'loading' do contexto
+  const { session, loading } = useAuth();
+  const location = useLocation(); // <<< 2. Obter a localização atual
 
   if (loading) {
-    // <<< 2. Mostrar estado de carregamento enquanto a sessão é verificada
     return <div className="p-8 text-center">Verificando autenticação...</div>;
   }
 
   if (!session) {
-    // <<< 3. Redirecionar SÓ DEPOIS que o loading terminar e não houver sessão
-    return <Navigate to="/login" replace />;
+    // <<< 3. Guardar a localização no 'state' ao redirecionar >>>
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Se passou pelo loading e tem sessão, renderiza o layout
   return (
     <>
       <Header />
@@ -39,22 +39,20 @@ function ProtectedLayoutWithHeader() {
   );
 }
 
-// Layout para rotas protegidas que NÃO usam o Header (ex: StudyPage)
 function MinimalProtectedRouteLayout() {
-    const { session, loading } = useAuth(); // <<< 1. Obter 'loading'
+  const { session, loading } = useAuth();
+  const location = useLocation(); // <<< 2. Obter a localização atual
 
-    if (loading) {
-        // <<< 2. Mostrar estado de carregamento
-        return <div className="p-8 text-center">Verificando autenticação...</div>;
-    }
+  if (loading) {
+    return <div className="p-8 text-center">Verificando autenticação...</div>;
+  }
 
-    if (!session) {
-        // <<< 3. Redirecionar SÓ DEPOIS do loading e sem sessão
-        return <Navigate to="/login" replace />;
-    }
+  if (!session) {
+    // <<< 3. Guardar a localização no 'state' ao redirecionar >>>
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
 
-    // Se passou pelo loading e tem sessão, renderiza a rota filha
-    return <Outlet />;
+  return <Outlet />;
 }
 
 // --- Componente Principal App ---
@@ -67,23 +65,17 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignUpPage />} />
 
-      {/* Agrupamento de Rotas Protegidas COM Header */}
+      {/* ... (Restante das rotas inalterado) ... */}
       <Route element={<ProtectedLayoutWithHeader />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/deck/:deckId" element={<DeckDetailPage />} />
         <Route path="/deck/:deckId/import" element={<ImportPage />} />
         <Route path="/stats" element={<StatsPage />} />
         <Route path="/search" element={<SearchPage />} />
-        {/* Adicione outras rotas que precisam do Header aqui */}
       </Route>
-
-      {/* Agrupamento de Rotas Protegidas SEM Header */}
-       <Route element={<MinimalProtectedRouteLayout />}>
+      <Route element={<MinimalProtectedRouteLayout />}>
         <Route path="/deck/:deckId/study" element={<StudyPage />} />
-         {/* Se houver outras rotas protegidas sem header, adicione aqui */}
       </Route>
-
-      {/* Rota Catch-all 404 - Deve ser a ÚLTIMA */}
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
