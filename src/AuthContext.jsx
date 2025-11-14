@@ -4,7 +4,6 @@ import {
   useState,
   useEffect,
   useContext,
-  useRef,
   useCallback,
 } from "react";
 import { supabase } from "@/supabaseClient";
@@ -12,7 +11,10 @@ import { toast } from "react-hot-toast";
 
 const AuthContext = createContext();
 
+// 30 minutos em milissegundos
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+// Chave para o localStorage
+const LAST_ACTIVITY_KEY = "lastActivityTimestamp";
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
@@ -21,25 +23,46 @@ export function AuthProvider({ children }) {
     () => localStorage.getItem("theme") || "light"
   );
 
-  const inactivityTimerRef = useRef(null);
+  // <<< 1. Função para ATUALIZAR a última atividade >>>
+  // Usamos useCallback para garantir que a função seja estável
+  const updateLastActivity = useCallback(() => {
+    try {
+      localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString());
+    } catch (e) {
+      console.error("Não foi possível aceder ao localStorage:", e);
+    }
+  }, []);
 
+  // <<< 2. Função para FAZER LOGOUT >>>
   const handleSignOutInactive = useCallback(() => {
     supabase.auth.signOut();
+    localStorage.removeItem(LAST_ACTIVITY_KEY); // Limpa o timestamp
     toast.error("Sessão expirada por inatividade. Faça login novamente.", {
       duration: 5000,
     });
   }, []);
 
-  const resetInactivityTimer = useCallback(() => {
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-    }
-    inactivityTimerRef.current = setTimeout(
-      handleSignOutInactive,
-      INACTIVITY_TIMEOUT_MS
-    );
-  }, [handleSignOutInactive]);
+  // <<< 3. Função para VERIFICAR a inatividade >>>
+  const checkInactivity = useCallback(() => {
+    // Só verifica se o utilizador está logado (tem sessão)
+    if (!session) return;
 
+    const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY);
+
+    if (lastActivity) {
+      const lastActivityTime = parseInt(lastActivity, 10);
+      const now = Date.now();
+
+      if (now - lastActivityTime > INACTIVITY_TIMEOUT_MS) {
+        handleSignOutInactive();
+      }
+    } else {
+      // Se não houver timestamp (ex: primeiro login), define um
+      updateLastActivity();
+    }
+  }, [session, handleSignOutInactive, updateLastActivity]);
+
+  // <<< 4. useEffect de Carregamento Inicial (Sessão) >>>
   useEffect(() => {
     setLoading(true);
     supabase.auth
@@ -48,7 +71,8 @@ export function AuthProvider({ children }) {
         setSession(initialSession);
         setLoading(false);
         if (initialSession) {
-          resetInactivityTimer();
+          // Se já estava logado, VERIFICA a inatividade primeiro
+          checkInactivity();
         }
       })
       .catch(() => {
@@ -60,27 +84,21 @@ export function AuthProvider({ children }) {
     } = supabase.auth.onAuthStateChange((_event, updatedSession) => {
       setSession(updatedSession);
 
-      // <<< CORREÇÃO: Esta verificação de 'loading' já não é necessária aqui >>>
-      // if (loading) {
-      //     setLoading(false);
-      // }
-
       if (updatedSession) {
-        resetInactivityTimer();
+        // Se acabou de fazer login, ATUALIZA o timestamp
+        updateLastActivity();
       } else {
-        if (inactivityTimerRef.current) {
-          clearTimeout(inactivityTimerRef.current);
-        }
+        // Se fez logout, limpa o timestamp
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
       }
     });
 
     return () => subscription.unsubscribe();
+  }, [checkInactivity, updateLastActivity]); // Depende das nossas funções estáveis
 
-    // <<< CORREÇÃO AQUI: Removido 'loading' da lista de dependências >>>
-  }, [resetInactivityTimer]);
-
-  // (O useEffect para 'window.addEventListener' permanece o mesmo)
+  // <<< 5. useEffect para Eventos de Atividade >>>
   useEffect(() => {
+    // Eventos que contam como "atividade"
     const events = [
       "mousedown",
       "mousemove",
@@ -89,23 +107,35 @@ export function AuthProvider({ children }) {
       "scroll",
     ];
 
-    if (session) {
-      events.forEach((event) =>
-        window.addEventListener(event, resetInactivityTimer)
-      );
-    }
-
-    return () => {
-      events.forEach((event) =>
-        window.removeEventListener(event, resetInactivityTimer)
-      );
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
+    // Handler para os eventos
+    const activityHandler = () => {
+      // Só atualiza se o utilizador estiver logado
+      if (session) {
+        updateLastActivity();
       }
     };
-  }, [session, resetInactivityTimer]);
 
-  // (O useEffect do 'theme' permanece o mesmo)
+    // Handler para verificar quando a aba fica visível
+    const visibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        checkInactivity();
+      }
+    };
+
+    // Adiciona os listeners
+    events.forEach((event) => window.addEventListener(event, activityHandler));
+    document.addEventListener("visibilitychange", visibilityHandler);
+
+    // Limpeza
+    return () => {
+      events.forEach((event) =>
+        window.removeEventListener(event, activityHandler)
+      );
+      document.removeEventListener("visibilitychange", visibilityHandler);
+    };
+  }, [session, updateLastActivity, checkInactivity]); // Depende da sessão e das funções
+
+  // (useEffect do 'theme' permanece o mesmo)
   useEffect(() => {
     if (theme === "dark") {
       document.documentElement.classList.add("dark");
@@ -121,8 +151,6 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{ session, loading, theme, toggleTheme }}>
-      {/* <<< CORREÇÃO: Renderiza 'children' ou o ecrã de loading global >>> */}
-      {/* Se 'loading' for true, o layout protegido em App.jsx irá esperar */}
       {children}
     </AuthContext.Provider>
   );
